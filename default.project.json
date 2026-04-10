@@ -1,0 +1,15 @@
+{
+	"name": "kosmos-demoplace",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedFirst": {
+			"kosmos/demo": {
+				"$path": "renderer/Roblox",
+				"program": {
+					"$path": "demo",
+					"kosmos": { "$path": "src" }
+				}
+			}
+		}
+	}
+}
