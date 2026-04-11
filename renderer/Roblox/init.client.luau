@@ -3,8 +3,10 @@
 --!optimize 2
 --!native
 
-local program = require(script.program)
+local program = require("./kosmos-renderer/demo")
 local frame = program.frame
+
+local view_size = Vector2.new(program.width, program.height)
 
 local function main()
 	local New = Instance.new
@@ -26,15 +28,15 @@ local function main()
 	Viewport.BackgroundTransparency = 1
 
 	local AspectRatio = New 'UIAspectRatioConstraint'
-	AspectRatio.AspectRatio = program.width / program.height
+	AspectRatio.AspectRatio = view_size.x / view_size.y
 	AspectRatio.Parent = Viewport
 
-	local Image = Asset:CreateEditableImage { Size = program.size }
+	local Image = Asset:CreateEditableImage { Size = view_size }
 	local ImageContent = Content.fromObject(Image)
 
 	Run.PreRender:Connect(function(delta: number)
 		local ImageBuffer = frame(delta)
-		Image:WritePixelsBuffer(Vector2.zero, program.size, ImageBuffer)
+		Image:WritePixelsBuffer(Vector2.zero, view_size, ImageBuffer)
 	end)
 
 	Viewport.ImageContent = ImageContent

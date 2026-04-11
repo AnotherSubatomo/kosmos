@@ -3,12 +3,10 @@
 	"tree": {
 		"$className": "DataModel",
 		"ReplicatedFirst": {
-			"kosmos/demo": {
+			"kosmos-renderer": {
 				"$path": "renderer/Roblox",
-				"program": {
-					"$path": "demo",
-					"kosmos": { "$path": "src" }
-				}
+				"demo": { "$path": "demo" },
+				"kosmos": { "$path": "src" }
 			}
 		}
 	}
