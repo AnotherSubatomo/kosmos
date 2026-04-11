@@ -1,13 +1,23 @@
 
--- Most logic is derived from https://github.com/tsoding/formula
--- * The greatest graphics programming video is attached in that repository btw
+-- kosmos: A toy 3D renderer
 
 --!strict
 --!optimize 2
 --!native
 
 export type mesh = {vertices: {vector}, faces: {{number}}}
-export type object = {mesh_id: number, position: vector, render: boolean}
+export type object = {
+	mesh_id: number,
+	position: vector,
+	right: vector,
+	up: vector,
+	forward: vector,
+	render: boolean,
+}
+
+local DEFAULT_RIGHT = vector.create(-1, 0, 0)
+local DEFAULT_UP = vector.create(0, 1, 0)
+local DEFAULT_FORWARD = vector.create(0, 0, 1)
 
 local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
 
@@ -33,16 +43,16 @@ return function (width: number, height: number)
 	local FOV = 90
 
 	-- Derived camera settings
-	local RIGHT = vector.create(-1, 0, 0)
-	local UP = vector.create(0, 1, 0)
-	local FORWARD = vector.create(0, 0, 1)
-	local SCALE = 1 * INV_ASPECT_RATIO
+	local RIGHT = DEFAULT_RIGHT
+	local UP = DEFAULT_UP
+	local FORWARD = DEFAULT_FORWARD
+	local SCALE = INV_ASPECT_RATIO
 
-	local function set_basis(): ()
-		local cy = math.cos(YAW)
-		local sy = math.sin(YAW)
-		local cp = math.cos(PITCH)
-		local sp = math.sin(PITCH)
+	local function calculate_basis(yaw: number, pitch: number, roll: number): (vector, vector, vector)
+		local cy = math.cos(yaw)
+		local sy = math.sin(yaw)
+		local cp = math.cos(pitch)
+		local sp = math.sin(pitch)
 
 		local forward = vector.create(sy * cp, -sp, cy * cp)
 
@@ -53,9 +63,9 @@ return function (width: number, height: number)
 		local up = vector.normalize(vector.cross(right, forward))
 
 		-- apply roll (rotate right/up around forward)
-		if ROLL ~= 0 then
-			local cr = math.cos(ROLL)
-			local sr = math.sin(ROLL)
+		if roll ~= 0 then
+			local cr = math.cos(roll)
+			local sr = math.sin(roll)
 
 			local r = right * cr + up * sr
 			local u = up * cr - right * sr
@@ -64,7 +74,7 @@ return function (width: number, height: number)
 			up = u
 		end
 
-		RIGHT, UP, FORWARD = right, up, forward
+		return right, up, forward
 	end
 
 	local function POSITION_CAMERA(position: vector?): ()
@@ -78,7 +88,7 @@ return function (width: number, height: number)
 		if pitch    and pitch    ~= PITCH    then PITCH    = pitch    end
 		if roll     and roll     ~= ROLL     then ROLL     = roll     end
 		if world_up and world_up ~= WORLD_UP then WORLD_UP = world_up end
-		set_basis()
+		RIGHT, UP, FORWARD = calculate_basis(YAW, PITCH, ROLL)
 		CAMERA_DIRTY = true
 	end
 
@@ -189,15 +199,23 @@ return function (width: number, height: number)
 		end
 	end
 
-	local OBJECT_TRANSFORMS: {{vector}} = table.create(16)
-
-	local function transform(vertices: {vector}, transforms: {vector}, position: vector): ()
+	local function transform(vertices: {vector}, transforms: {vector}, object: object): ()
 		-- * commented since they're implicitly overwritten, though
 		--   when it makes more sense, I might uncomment this...
 		--table.clear(transforms)
 
+		local position = object.position
+		local right = object.right
+		local up = object.up
+		local forward = object.forward
+
 		for i, v in vertices do
-			local pos_v = v + position - POSITION
+			local rot_v = vector.create(
+				vector.dot(v, right),
+				vector.dot(v, up),
+				vector.dot(v, forward)
+			)
+			local pos_v = rot_v + position - POSITION
 			local cam_v = vector.create(
 				vector.dot(pos_v, RIGHT),
 				vector.dot(pos_v, UP),
@@ -210,11 +228,13 @@ return function (width: number, height: number)
 
 	local NEAR = 0.01
 
+	-- Near plane clipping algorithm
+	-- * `true` when line is to be kept
 	local function clip_near(a: vector, b: vector): (boolean, vector, vector)
 		local az, bz = a.z, b.z
-		-- Fully behind → reject
+		-- Fully behind --> reject
 		if az < NEAR and bz < NEAR then
-			return true, a, b
+			return false, a, b
 		end
 
 		-- Only clip if needed
@@ -224,24 +244,25 @@ return function (width: number, height: number)
 			local ay, by = a.y, b.y
 
 			if az < NEAR then
-				-- Move A → intersection
+				-- Move A --> intersection
 				local new_ax = ax + (bx - ax) * t
 				local new_ay = ay + (by - ay) * t
 				a = vector.create(new_ax, new_ay, NEAR)
 			else
-				-- Move B → intersection
+				-- Move B --> intersection
 				local new_bx = bx + (ax - bx) * t
 				local new_by = by + (ay - by) * t
 				b = vector.create(new_bx, new_by, NEAR)
 			end
 		end
 
-		return false, a, b
+		return true, a, b
 	end
 
 	local MESHES: {mesh} = table.create(4)
 	local OBJECTS: {object} = table.create(16)
 	local OBJECTS_CHANGED: {boolean} = table.create(16)
+	local OBJECT_TRANSFORMS: {{vector}} = table.create(16)
 
 	local function MESH(mesh: mesh): (number)
 		table.insert(MESHES, mesh)
@@ -258,11 +279,14 @@ return function (width: number, height: number)
 		local object = {
 			mesh_id = mesh_id,
 			position = vector.zero,
+			right = DEFAULT_RIGHT,
+			up = DEFAULT_UP,
+			forward = DEFAULT_FORWARD,
 			render = render ~= false
 		}
 
 		OBJECTS[object_id] = object
-		OBJECTS_CHANGED[object_id] = true
+		OBJECTS_CHANGED[object_id] = false
 
 		-- Create draw entry *once*
 		local mesh = MESHES[mesh_id]
@@ -275,6 +299,13 @@ return function (width: number, height: number)
 		local object = OBJECTS[object_id]
 		if not object then error(ERR_OBJ_DOESNT_EXIST) end
 		object.position = position
+		OBJECTS_CHANGED[object_id] = true
+	end
+
+	local function SET_OBJECT_ROTATION(object_id: number, yaw: number, pitch: number, roll: number): ()
+		local object = OBJECTS[object_id]
+		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		object.right, object.up, object.forward = calculate_basis(yaw, pitch, roll)
 		OBJECTS_CHANGED[object_id] = true
 	end
 
@@ -295,7 +326,7 @@ return function (width: number, height: number)
 			-- Resolve necessary transforms
 			if CAMERA_DIRTY or OBJECTS_CHANGED[object_id] then
 				local vertices = mesh.vertices
-				transform(vertices, transforms, object.position)
+				transform(vertices, transforms, object)
 				OBJECTS_CHANGED[object_id] = false
 			end
 
@@ -303,23 +334,45 @@ return function (width: number, height: number)
 
 			-- Actual render
 			for _, face in faces do
-				local n_vertices = #face
+				local a = transforms[face[1] + 1]
+				local b = transforms[face[2] + 1]
+				local c = transforms[face[3] + 1]
 
-				for i = 1, n_vertices do
-					local j = i + 1
-					if j > n_vertices then j = 1 end
-					
-					local a = transforms[face[i] + 1]
-					local b = transforms[face[j] + 1]
+				-- Backface culling (skip hidden faces)
+				local ab = b - a
+				local ac = c - a
+				local normal = vector.cross(ab, ac)
 
-					local reject = false
-					reject, a, b = clip_near(a, b)
-					if reject then continue end
+				if vector.dot(normal, a) >= 0 then continue end
 
-					local ax, ay = project_to_screen(a)
-					local bx, by = project_to_screen(b)
-					line(ax, ay, bx, by)
+				local ax, ay
+				local bx, by
+				local cx, cy
+
+				local accept_i = false
+				accept_i, a, b = clip_near(a, b)
+
+				local accept_j = false
+				accept_j, b, c = clip_near(b, c)
+
+				local accept_k = false
+				accept_k, c, a = clip_near(c, a)
+
+				if accept_i or accept_k then
+					ax, ay = project_to_screen(a)
 				end
+
+				if accept_i or accept_j then
+					bx, by = project_to_screen(b)
+				end
+
+				if accept_j or accept_k then
+					cx, cy = project_to_screen(c)
+				end
+
+				if accept_i then line(ax, ay, bx, by) end
+				if accept_j then line(bx, by, cx, cy) end
+				if accept_k then line(cx, cy, ax, ay) end
 			end
 		end
 
@@ -341,6 +394,7 @@ return function (width: number, height: number)
 		mesh = MESH;
 		object = OBJECT;
 		setObjectPosition = SET_OBJECT_POSITION;
+		setObjectRotation = SET_OBJECT_ROTATION;
 		setObjectVisiblity = SET_OBJECT_VISIBILITY;
 
 		positionCamera = POSITION_CAMERA;
