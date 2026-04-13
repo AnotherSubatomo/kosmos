@@ -26,6 +26,7 @@ local function main()
 	Viewport.Position = UDim2.fromScale(0.5, 0.5)
 	Viewport.AnchorPoint = Vector2.new(0.5, 0.5)
 	Viewport.BackgroundTransparency = 1
+	Viewport.ResampleMode = Enum.ResamplerMode.Pixelated
 
 	local AspectRatio = New 'UIAspectRatioConstraint'
 	AspectRatio.AspectRatio = view_size.x / view_size.y

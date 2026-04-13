@@ -32,6 +32,10 @@ const frame = program[2]
 canvas.width = width
 canvas.height = height
 
+canvas.style.width = "100vw"
+canvas.style.height = "100vh"
+canvas.style.objectFit = "contain"
+
 const ctx = canvas.getContext("2d")
 const image_data = ctx.createImageData(width, height)
 const pixels = new Uint8ClampedArray(width * height * 4)
