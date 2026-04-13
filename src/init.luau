@@ -1,5 +1,12 @@
 
--- kosmos: A toy 3D renderer
+--[=[
+	kosmos - Platform-agnostic 3D renderer written in Luau
+	Author: @AnotherSubatomo (GitHub)
+	SPDX-License-Identifier: MPL-2.0
+
+	* Vertex winding order is "counter-clockwise = front-facing"
+
+]=]
 
 --!strict
 --!optimize 2
@@ -15,26 +22,57 @@ export type object = {
 	render: boolean,
 }
 
+local NEAR = 0.01
+
 local DEFAULT_RIGHT = vector.create(-1, 0, 0)
 local DEFAULT_UP = vector.create(0, 1, 0)
 local DEFAULT_FORWARD = vector.create(0, 0, 1)
 
 local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
 
+local function intersect__scalar_a(ax: number, ay: number, az: number, b: vector): (vector)
+	local t = (NEAR - az) / (b.z - az)
+
+	return vector.create(
+		ax + (b.x - ax) * t,
+		ay + (b.y - ay) * t,
+		NEAR
+	)
+end
+
+local function intersect__scalar_b(a: vector, bx: number, by: number, bz: number): (vector)
+	local ax, ay = a.x, a.y
+	local t = (NEAR - a.z) / (bz - a.z)
+
+	return vector.create(
+		ax + (bx - ax) * t,
+		ay + (by - ay) * t,
+		NEAR
+	)
+end
+
 return function (width: number, height: number)
 	local VIEW_WIDTH = width
 	local VIEW_HEIGHT = height
+
+	local WIDTH_M_1 = width - 1
+	local HEIGHT_M_1 = height - 1
 	local INV_ASPECT_RATIO = VIEW_HEIGHT / VIEW_WIDTH
 
 	local IMAGE_ROW_OFFSET = 4 * VIEW_WIDTH
 	local IMAGE_MEMSIZE = IMAGE_ROW_OFFSET * VIEW_HEIGHT
 	local IMAGE = buffer.create(IMAGE_MEMSIZE)
 
-	local CAMERA_DIRTY = false
+	local Z = buffer.create(IMAGE_MEMSIZE)
+	local Z_CLEAR = buffer.create(IMAGE_MEMSIZE)
 
-	local function CLEAR(): ()
-		buffer.fill(IMAGE, 0, 255)
+	for offset = 0, IMAGE_MEMSIZE - 4, 4 do
+		buffer.writeu32(Z_CLEAR, offset, 0x7F800000)
 	end
+
+	local LIGHT_DIR = vector.normalize(vector.create(0.3, 1, 0.5))
+
+	local CAMERA_DIRTY = false
 	
 	-- Camera settings
 	local POSITION = vector.zero
@@ -47,6 +85,10 @@ return function (width: number, height: number)
 	local UP = DEFAULT_UP
 	local FORWARD = DEFAULT_FORWARD
 	local SCALE = INV_ASPECT_RATIO
+
+	local function clear_z_buffer(): ()
+		buffer.copy(Z, 0, Z_CLEAR, 0, IMAGE_MEMSIZE)
+	end
 
 	local function calculate_basis(yaw: number, pitch: number, roll: number): (vector, vector, vector)
 		local cy = math.cos(yaw)
@@ -99,104 +141,15 @@ return function (width: number, height: number)
 		CAMERA_DIRTY = true
 	end
 
-	local function project_to_screen(v: vector): (number, number)
+	local function project_to_screen(v: vector): (number, number, number)
 		local z = v.z
 		local px = (v.x/z) * SCALE
 		local py = (v.y/z) * SCALE
 
 		return 
-			((px + 1) * 0.5 * (VIEW_WIDTH  - 1)) // 1,
-			((1 - (py + 1) * 0.5) * (VIEW_HEIGHT - 1)) // 1
-	end
-
-	-- Liang-Barsky line clipping algorithm
-	-- * `true` when invisible; point coordinates are rounded
-	local function clip_line(x0: number, y0: number, x1: number, y1: number): (boolean, number, number, number, number)
-		local dx = x1 - x0
-		local dy = y1 - y0
-
-		local t0 = 0
-		local t1 = 1
-
-		local function not_clip(p: number, q: number): (boolean)
-			if p == 0 then -- Parallel and outside
-				return q < 0
-			end
-
-			local r = q / p
-
-			if p < 0 then
-				if r > t1 then return true end -- Entering and outside
-				if r > t0 then t0 = r end -- Update entering t
-			else
-				if r < t0 then return true end -- Leaving and outside
-				if r < t1 then t1 = r end -- Update exiting t
-			end
-
-			return false
-		end
-
-		-- Check if line is out of the left, right, top, & bottom lines respectively
-		if not_clip(-dx, x0) then return true, 0, 0, 0, 0 end
-		if not_clip( dx, VIEW_WIDTH - 1 - x0) then return true, 0, 0, 0, 0 end
-		if not_clip(-dy, y0) then return true, 0, 0, 0, 0 end
-		if not_clip( dy, VIEW_HEIGHT - 1 - y0) then return true, 0, 0, 0, 0 end
-
-		-- Apply clipping
-		if t1 < 1 then
-			x1 = (x0 + t1 * dx + 0.5) // 1
-			y1 = (y0 + t1 * dy + 0.5) // 1
-		end
-
-		if t0 > 0 then
-			x0 = (x0 + t0 * dx + 0.5) // 1
-			y0 = (y0 + t0 * dy + 0.5) // 1
-		end
-
-		return false, x0, y0, x1, y1
-	end
-
-	-- Bresenham's line algorithm
-	local function line(x0: number, y0: number, x1: number, y1: number): ()
-		local is_invisible = false
-
-		is_invisible, x0, y0, x1, y1 = clip_line(x0, y0, x1, y1)
-		if is_invisible then return end
-
-		local dx = math.abs(x1 - x0)
-		local dy = math.abs(y1 - y0)
-
-		local sxPixel = (x0 < x1) and 1 or -1
-		local syPixel = (y0 < y1) and 1 or -1
-
-		local sxByte = sxPixel * 4
-		local syByte = syPixel * IMAGE_ROW_OFFSET
-
-		local err = dx - dy
-
-		local xByte = x0 * 4
-		local yOffset = y0 * IMAGE_ROW_OFFSET
-
-		while true do
-			local index = yOffset + xByte
-			buffer.writeu32(IMAGE, index, 0xfff055f0)
-
-			if x0 == x1 and y0 == y1 then break end
-
-			local e2 = err + err
-
-			if e2 > -dy then
-				err = err - dy
-				x0 = x0 + sxPixel
-				xByte = xByte + sxByte
-			end
-
-			if e2 < dx then
-				err = err + dx
-				y0 = y0 + syPixel
-				yOffset = yOffset + syByte
-			end
-		end
+			((px + 1) * 0.5 * (WIDTH_M_1)) // 1,
+			((1 - (py + 1) * 0.5) * (HEIGHT_M_1)) // 1,
+			z
 	end
 
 	local function transform(vertices: {vector}, transforms: {vector}, object: object): ()
@@ -210,12 +163,15 @@ return function (width: number, height: number)
 		local forward = object.forward
 
 		for i, v in vertices do
+			-- World-space transformations: sync rotation & position properties
 			local rot_v = vector.create(
 				vector.dot(v, right),
 				vector.dot(v, up),
 				vector.dot(v, forward)
 			)
 			local pos_v = rot_v + position - POSITION
+
+			-- Camera-space transformation
 			local cam_v = vector.create(
 				vector.dot(pos_v, RIGHT),
 				vector.dot(pos_v, UP),
@@ -226,37 +182,185 @@ return function (width: number, height: number)
 		end
 	end
 
-	local NEAR = 0.01
+	local C1, C2, C3, C4, C5, C6
+	
+	local function clip_triangle(a: vector, b: vector, c: vector): (number)
+		local ai = a.z >= NEAR
+		local bi = b.z >= NEAR
+		local ci = c.z >= NEAR
 
-	-- Near plane clipping algorithm
-	-- * `true` when line is to be kept
-	local function clip_near(a: vector, b: vector): (boolean, vector, vector)
-		local az, bz = a.z, b.z
-		-- Fully behind --> reject
-		if az < NEAR and bz < NEAR then
-			return false, a, b
+		local count = (ai and 1 or 0) + (bi and 1 or 0) + (ci and 1 or 0)
+
+		-- Fully inside
+		if count == 3 then
+			C1, C2, C3 = a, b, c
+			return 1
 		end
 
-		-- Only clip if needed
-		if az < NEAR or bz < NEAR then
-			local t = (NEAR - az) / (bz - az)
-			local ax, bx = a.x, b.x
-			local ay, by = a.y, b.y
+		-- Fully outside
+		if count == 0 then
+			return 0
+		end
 
-			if az < NEAR then
-				-- Move A --> intersection
-				local new_ax = ax + (bx - ax) * t
-				local new_ay = ay + (by - ay) * t
-				a = vector.create(new_ax, new_ay, NEAR)
+		-- 1 inside --> 1 triangle
+		if count == 1 then
+			local inV, out1, out2
+
+			if ai then
+				inV, out1, out2 = a, b, c
+			elseif bi then
+				inV, out1, out2 = b, c, a
 			else
-				-- Move B --> intersection
-				local new_bx = bx + (ax - bx) * t
-				local new_by = by + (ay - by) * t
-				b = vector.create(new_bx, new_by, NEAR)
+				inV, out1, out2 = c, a, b
 			end
+
+			local inV_x, inV_y, inV_z = inV.x, inV.y, inV.z
+
+			C1 = inV
+			C2 = intersect__scalar_a(inV_x, inV_y, inV_z, out1)
+			C3 = intersect__scalar_a(inV_x, inV_y, inV_z, out2)
+
+			return 1
 		end
 
-		return true, a, b
+		-- 2 inside --> quad --> 2 triangles
+		local in1, in2, outV
+
+		if not ai then
+			outV, in1, in2 = a, b, c
+		elseif not bi then
+			outV, in1, in2 = b, c, a
+		else
+			outV, in1, in2 = c, a, b
+		end
+
+		local outV_x, outV_y, outV_z = outV.x, outV.y, outV.z
+
+		local i1 = intersect__scalar_b(in1, outV_x, outV_y, outV_z)
+		local i2 = intersect__scalar_b(in2, outV_x, outV_y, outV_z)
+
+		-- First triangle
+		C1, C2, C3 = in1, in2, i1
+
+		-- Second triangle
+		C4, C5, C6 = in2, i2, i1
+
+		return 2
+	end
+
+	local function draw_triangle(a: vector, b: vector, c: vector, color: number): ()
+		-- Projection
+		local ax, ay, az = project_to_screen(a)
+		local bx, by, bz = project_to_screen(b)
+		local cx, cy, cz = project_to_screen(c)
+
+		-- Sort points by Y (a = top, b = mid, c = bottom)
+		if ay > by then ax, ay, az, bx, by, bz = bx, by, bz, ax, ay, az end
+		if ay > cy then ax, ay, az, cx, cy, cz = cx, cy, cz, ax, ay, az end
+		if by > cy then bx, by, bz, cx, cy, cz = cx, cy, cz, bx, by, bz end
+
+		-- Degenerate triangle, return
+		if ay == cy then return end
+
+		local dy_ab = by - ay
+		local dy_ac = cy - ay
+		local dy_bc = cy - by
+
+		-- Calculate slopes for incremental interpolation
+		-- Edge slopes for each triangle edge in screen space
+		local m_ab = dy_ab == 0 and 0 or (bx - ax) / dy_ab
+		local m_ac = dy_ac == 0 and 0 or (cx - ax) / dy_ac
+		local m_bc = dy_bc == 0 and 0 or (cx - bx) / dy_bc
+
+		-- Depth slopes
+		local mz_ab = dy_ab == 0 and 0 or (bz - az) / dy_ab
+		local mz_ac = dy_ac == 0 and 0 or (cz - az) / dy_ac
+		local mz_bc = dy_bc == 0 and 0 or (cz - bz) / dy_bc
+
+		-- Scan bounds
+		local y_start  = math.max(0, ay // 1)
+		local y_end    = math.min(HEIGHT_M_1, cy // 1)
+		local y_middle = by // 1
+
+		local row_stride = y_start * IMAGE_ROW_OFFSET
+
+		-- Start scan loop for the top half...
+		for y = y_start, y_middle - 1 do
+			local lt = (y - ay)
+			local rt = (y - ay)
+
+			local xl = ax + lt * m_ab
+			local xr = ax + rt * m_ac
+
+			local zl = az + lt * mz_ab
+			local zr = az + rt * mz_ac
+
+			-- Ensure correct ordering
+			if xl > xr then
+				xl, xr = xr, xl
+				zl, zr = zr, zl
+			end
+
+			local x_start = math.max(0, xl // 1)
+			local x_end   = math.min(WIDTH_M_1, xr // 1)
+			local offset  = row_stride + x_start * 4
+
+			local dx_lr = xr - xl
+			local m_zx = dx_lr == 0 and 0 or (zr - zl) / dx_lr
+			local z = zl
+
+			-- Inner fill loop
+			for _ = x_start, x_end do
+				if z < buffer.readf32(Z, offset) then
+					buffer.writeu32(IMAGE, offset, color)
+					buffer.writef32(Z, offset, z)
+				end
+
+				z += m_zx
+				offset += 4
+			end
+
+			row_stride += IMAGE_ROW_OFFSET
+		end
+
+		-- Start scan loop for the bottom half...
+		for y = y_middle, y_end do
+			local lt = (y - by)
+			local rt = (y - ay)
+
+			local xl = bx + lt * m_bc
+			local xr = ax + rt * m_ac
+
+			local zl = bz + lt * mz_bc
+			local zr = az + rt * mz_ac
+
+			-- Ensure correct ordering
+			if xl > xr then
+				xl, xr = xr, xl
+				zl, zr = zr, zl
+			end
+
+			local x_start = math.max(0, xl // 1)
+			local x_end   = math.min(WIDTH_M_1, xr // 1)
+			local offset  = row_stride + x_start * 4
+
+			local dx_lr = xr - xl
+			local m_zx = dx_lr == 0 and 0 or (zr - zl) / dx_lr
+			local z = zl
+
+			-- Inner fill loop
+			for _ = x_start, x_end do
+				if z < buffer.readf32(Z, offset) then
+					buffer.writeu32(IMAGE, offset, color)
+					buffer.writef32(Z, offset, z)
+				end
+
+				z += m_zx
+				offset += 4
+			end
+
+			row_stride += IMAGE_ROW_OFFSET
+		end
 	end
 
 	local MESHES: {mesh} = table.create(4)
@@ -338,45 +442,38 @@ return function (width: number, height: number)
 				local b = transforms[face[2] + 1]
 				local c = transforms[face[3] + 1]
 
-				-- Backface culling (skip hidden faces)
+				-- Backface culling
 				local ab = b - a
 				local ac = c - a
 				local normal = vector.cross(ab, ac)
 
 				if vector.dot(normal, a) >= 0 then continue end
 
-				local ax, ay
-				local bx, by
-				local cx, cy
+				-- Near plane triangle clipping
+				local tri_count = clip_triangle(a, b, c)
+				if tri_count == 0 then continue end
+				
+				-- Rasterizing and shading 
+				local n = vector.normalize(normal)
+				local intensity = math.max(0, vector.dot(n, LIGHT_DIR))
+				local shade = math.floor(80 + intensity * 175)
+				local color = 0xff000000 + (shade * 0x10101)
 
-				local accept_i = false
-				accept_i, a, b = clip_near(a, b)
-
-				local accept_j = false
-				accept_j, b, c = clip_near(b, c)
-
-				local accept_k = false
-				accept_k, c, a = clip_near(c, a)
-
-				if accept_i or accept_k then
-					ax, ay = project_to_screen(a)
+				if tri_count == 1 then
+					draw_triangle(C1, C2, C3, color)
+				elseif tri_count == 2 then
+					draw_triangle(C1, C2, C3, color)
+					draw_triangle(C4, C5, C6, color)
 				end
-
-				if accept_i or accept_j then
-					bx, by = project_to_screen(b)
-				end
-
-				if accept_j or accept_k then
-					cx, cy = project_to_screen(c)
-				end
-
-				if accept_i then line(ax, ay, bx, by) end
-				if accept_j then line(bx, by, cx, cy) end
-				if accept_k then line(cx, cy, ax, ay) end
 			end
 		end
 
 		CAMERA_DIRTY = false
+	end
+
+	local function CLEAR(): ()
+		clear_z_buffer()
+		buffer.fill(IMAGE, 0, 255)
 	end
 
 	local function GET_IMAGE_BUFFER(): (buffer)

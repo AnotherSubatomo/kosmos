@@ -1,9 +1,11 @@
 # kosmos
-[Toy Project] 3D rendering in Roblox via EditableImages
+[Toy Project] Platform-agnostic 3D renderer written in Luau
 
 [![Last Commit](https://img.shields.io/github/last-commit/AnotherSubatomo/kosmos/main)](https://github.com/AnotherSubatomo/kosmos/commits/main/) [![License: MPL-2.0](https://img.shields.io/badge/License-MPL2.0-yellow.svg?)](https://opensource.org/licenses/MPL-2.0)
 
 ---
+
+Renderable on both the [web](/renderer/web/) and [Roblox](/renderer/Roblox/).
 
 ## Q&A
 
