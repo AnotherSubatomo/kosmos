@@ -17,17 +17,17 @@ return {
 	};
 
 	faces = {
-		{0, 1, 2},
-		{0, 2, 3},
-		{4, 6, 5},
-		{4, 7, 6},
-		{0, 5, 1},
-		{0, 4, 5},
-		{3, 2, 6},
-		{3, 6, 7},
-		{0, 3, 7},
-		{0, 7, 4},
-		{1, 5, 6},
-		{1, 6, 2},
+		vector.create(1, 2, 3),
+		vector.create(1, 3, 4),
+		vector.create(5, 7, 6),
+		vector.create(5, 8, 7),
+		vector.create(1, 6, 2),
+		vector.create(1, 5, 6),
+		vector.create(4, 3, 7),
+		vector.create(4, 7, 8),
+		vector.create(1, 4, 8),
+		vector.create(1, 8, 5),
+		vector.create(2, 6, 7),
+		vector.create(2, 7, 3),
 	};
 }

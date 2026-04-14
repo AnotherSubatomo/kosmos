@@ -26,7 +26,10 @@ local yaw = 0
 
 local function FRAME(delta: number): (buffer)
 	yaw += delta * 0.5
-	kosmos.rotateCamera(math.sin(yaw))
+	local angle = math.cos(yaw)
+	kosmos.setObjectRotation(obj1, yaw, 0, angle)
+	kosmos.setObjectRotation(obj2, yaw, 0, angle)
+	kosmos.positionCamera(vector.create(angle/2, 0, 0))
 	 
 	-- Clear the image buffer
 	kosmos.clear()

@@ -5,14 +5,13 @@
 	SPDX-License-Identifier: MPL-2.0
 
 	* Vertex winding order is "counter-clockwise = front-facing"
-
 ]=]
 
 --!strict
 --!optimize 2
 --!native
 
-export type mesh = {vertices: {vector}, faces: {{number}}}
+export type mesh = {vertices: {vector}, faces: {vector}}
 export type object = {
 	mesh_id: number,
 	position: vector,
@@ -31,24 +30,32 @@ local DEFAULT_FORWARD = vector.create(0, 0, 1)
 local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
 
 local function intersect__scalar_a(ax: number, ay: number, az: number, b: vector): (vector)
-	local t = (NEAR - az) / (b.z - az)
-
-	return vector.create(
-		ax + (b.x - ax) * t,
-		ay + (b.y - ay) * t,
-		NEAR
-	)
+	local dz = b.z - az
+	if dz == 0 then
+		return vector.create(ax, ay, NEAR)
+	else
+		local t = (NEAR - az) / dz
+		return vector.create(
+			ax + (b.x - ax) * t,
+			ay + (b.y - ay) * t,
+			NEAR
+		)
+	end
 end
 
 local function intersect__scalar_b(a: vector, bx: number, by: number, bz: number): (vector)
-	local ax, ay = a.x, a.y
-	local t = (NEAR - a.z) / (bz - a.z)
-
-	return vector.create(
-		ax + (bx - ax) * t,
-		ay + (by - ay) * t,
-		NEAR
-	)
+	local ax, ay, az = a.x, a.y, a.z
+	local dz = bz - az
+	if dz == 0 then
+		return vector.create(ax, ay, NEAR)
+	else
+		local t = (NEAR - az) / dz
+		return vector.create(
+			ax + (bx - ax) * t,
+			ay + (by - ay) * t,
+			NEAR
+		)
+	end
 end
 
 return function (width: number, height: number)
@@ -138,6 +145,12 @@ return function (width: number, height: number)
 		if not fov or fov == FOV then return end
 		FOV = fov
 		SCALE = (1 / math.tan(math.rad(FOV) * 0.5)) * INV_ASPECT_RATIO
+		CAMERA_DIRTY = true
+	end
+
+	local function SET_LIGHTING_DIRECTION(direction: vector): ()
+		if not direction or direction == LIGHT_DIR then return end
+		LIGHT_DIR = direction
 		CAMERA_DIRTY = true
 	end
 
@@ -277,10 +290,23 @@ return function (width: number, height: number)
 		local mz_ac = dy_ac == 0 and 0 or (cz - az) / dy_ac
 		local mz_bc = dy_bc == 0 and 0 or (cz - bz) / dy_bc
 
-		-- Scan bounds
-		local y_start  = math.max(0, ay // 1)
-		local y_end    = math.min(HEIGHT_M_1, cy // 1)
+		-- Discretize to get scan bounds
+		local y_start  = ay // 1
+		local y_end    = cy // 1
+
+		-- Ensure correct ordering after discretization
+		if y_start > y_end then y_start, y_end = y_end, y_start end
+
+		-- Clamp to viewport height
+		y_start  = math.max(0, y_start)
+		y_end    = math.min(HEIGHT_M_1, y_end)
+
+		-- Split the triangle!
 		local y_middle = by // 1
+
+		-- Clamp to scan bounds
+		if y_middle < y_start then y_middle = y_start end
+		if y_middle > y_end   then y_middle = y_end   end
 
 		local row_stride = y_start * IMAGE_ROW_OFFSET
 
@@ -323,8 +349,11 @@ return function (width: number, height: number)
 			row_stride += IMAGE_ROW_OFFSET
 		end
 
+		-- Sometimes, discretization pushed `y_middle` below the true split, so we bump it up
+		local y_middle_adj = y_middle + (y_middle < by and 1 or 0)
+
 		-- Start scan loop for the bottom half...
-		for y = y_middle, y_end do
+		for y = y_middle_adj, y_end do
 			local lt = (y - by)
 			local rt = (y - ay)
 
@@ -438,9 +467,9 @@ return function (width: number, height: number)
 
 			-- Actual render
 			for _, face in faces do
-				local a = transforms[face[1] + 1]
-				local b = transforms[face[2] + 1]
-				local c = transforms[face[3] + 1]
+				local a = transforms[face.x]
+				local b = transforms[face.y]
+				local c = transforms[face.z]
 
 				-- Backface culling
 				local ab = b - a
@@ -497,6 +526,7 @@ return function (width: number, height: number)
 		positionCamera = POSITION_CAMERA;
 		rotateCamera = ROTATE_CAMERA;
 		setFieldOfView = SET_FIELD_OF_VIEW;
+		setLightingDirection = SET_LIGHTING_DIRECTION;
 
 		render = RENDER;
 		getImageBuffer = GET_IMAGE_BUFFER;
