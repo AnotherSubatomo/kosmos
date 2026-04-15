@@ -22,24 +22,50 @@ kosmos.setObjectPosition(obj2, vector.create(-0.625, 0, 1))
 
 local IMAGE = kosmos.getImageBuffer()
 
-local yaw = 0
+local SPEED = 4
+local SENSITIVITY = 0.5
+local OBJ_ROT_SPEED = 0.5
+
+local camera_position = vector.zero
+local camera_yaw, camera_pitch = 0, 0
+
+local move_direction = vector.zero
+local mouse_delta = vector.zero
+local obj_rot = 0
 
 local function FRAME(delta: number): (buffer)
-	yaw += delta * 0.5
-	local angle = math.cos(yaw)
-	kosmos.setObjectRotation(obj1, yaw, 0, angle)
-	kosmos.setObjectRotation(obj2, yaw, 0, angle)
-	kosmos.positionCamera(vector.create(angle/2, 0, 0))
-	 
-	-- Clear the image buffer
-	kosmos.clear()
+	camera_yaw -= mouse_delta.x * SENSITIVITY * delta
+	camera_pitch += mouse_delta.y * SENSITIVITY * delta
+	kosmos.setCameraRotation(camera_yaw, camera_pitch)
 
-	kosmos.render()	
+	local right, up, forward = kosmos.getCameraBasis()
+	local movement =
+		forward * move_direction.z -
+		right   * move_direction.x +
+		up      * move_direction.y
+
+	camera_position += movement * SPEED * delta
+	kosmos.setCameraPosition(camera_position)
+
+	obj_rot += OBJ_ROT_SPEED * delta
+	local cos_obj_rot = math.cos(obj_rot)
+	kosmos.setObjectRotation(obj1, obj_rot, 0, cos_obj_rot)
+	kosmos.setObjectRotation(obj2, obj_rot, 0, cos_obj_rot)
+
+	kosmos.clear()
+	kosmos.render()
+
 	return IMAGE
+end
+
+local function INPUT(new_mouse_delta: vector, new_move_direction: vector): ()
+	move_direction = new_move_direction
+	mouse_delta = new_mouse_delta
 end
 
 return {
 	width = VIEW_WIDTH,
 	height = VIEW_HEIGHT,
-	frame = FRAME
+	frame = FRAME,
+	input = INPUT,
 }

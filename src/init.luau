@@ -141,6 +141,10 @@ return function (width: number, height: number)
 		CAMERA_DIRTY = true
 	end
 
+	local function GET_CAMERA_BASIS(): (vector, vector, vector)
+		return RIGHT, UP, FORWARD
+	end
+
 	local function SET_FIELD_OF_VIEW(fov: number?): ()
 		if not fov or fov == FOV then return end
 		FOV = fov
@@ -527,6 +531,7 @@ return function (width: number, height: number)
 		setCameraRotation = SET_CAMERA_ROTATION;
 		setFieldOfView = SET_FIELD_OF_VIEW;
 		setLightingDirection = SET_LIGHTING_DIRECTION;
+		getCameraBasis = GET_CAMERA_BASIS;
 
 		clear = CLEAR;
 		render = RENDER;
