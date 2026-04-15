@@ -126,13 +126,13 @@ return function (width: number, height: number)
 		return right, up, forward
 	end
 
-	local function POSITION_CAMERA(position: vector?): ()
+	local function SET_CAMERA_POSITION(position: vector?): ()
 		if not position or position == POSITION then return end
 		POSITION = position
 		CAMERA_DIRTY = true
 	end
 
-	local function ROTATE_CAMERA(yaw: number?, pitch: number?, roll: number?, world_up: vector?): ()
+	local function SET_CAMERA_ROTATION(yaw: number?, pitch: number?, roll: number?, world_up: vector?): ()
 		if yaw      and yaw      ~= YAW      then YAW      = yaw      end
 		if pitch    and pitch    ~= PITCH    then PITCH    = pitch    end
 		if roll     and roll     ~= ROLL     then ROLL     = roll     end
@@ -516,18 +516,19 @@ return function (width: number, height: number)
 	end
 
 	return {
-		clear = CLEAR;
 		mesh = MESH;
 		object = OBJECT;
+
 		setObjectPosition = SET_OBJECT_POSITION;
 		setObjectRotation = SET_OBJECT_ROTATION;
 		setObjectVisiblity = SET_OBJECT_VISIBILITY;
 
-		positionCamera = POSITION_CAMERA;
-		rotateCamera = ROTATE_CAMERA;
+		setCameraPosition = SET_CAMERA_POSITION;
+		setCameraRotation = SET_CAMERA_ROTATION;
 		setFieldOfView = SET_FIELD_OF_VIEW;
 		setLightingDirection = SET_LIGHTING_DIRECTION;
 
+		clear = CLEAR;
 		render = RENDER;
 		getImageBuffer = GET_IMAGE_BUFFER;
 		
