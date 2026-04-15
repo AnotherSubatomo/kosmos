@@ -14,8 +14,14 @@ local program = require('../demo')
 -- I have every right to write this block of angry text.
 
 local frame = program.frame
+local input = program.input
+
 local function luau_web_compatible_frame(delta: number): (string)
 	return buffer.tostring(frame(delta))
 end
 
-return program.width, program.height, luau_web_compatible_frame
+local function luau_web_compatible_input(dx: number, dy: number, right: number, up: number, forward: number): ()
+	input(vector.create(dx, dy), vector.create(right, up, forward))
+end
+
+return program.width, program.height, luau_web_compatible_frame, luau_web_compatible_input
