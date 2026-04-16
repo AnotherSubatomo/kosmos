@@ -41,13 +41,22 @@ canvas.style.height = "100vh"
 canvas.style.objectFit = "contain"
 
 // Handle user inputs
-let delta_x = 0, delta_y = 0
+let delta_x = 0, delta_y = 0, dont_record_delta = true
 
 canvas.addEventListener("click", async () => {
-  await canvas.requestPointerLock()
+	await canvas.requestPointerLock()
+})
+
+document.addEventListener('mousedown', (event) => {
+	if (event.button === 2) (dont_record_delta = false)
+})
+
+document.addEventListener('mouseup', (event) => {
+	if (event.button === 2) (dont_record_delta = true)
 })
 
 document.addEventListener('mousemove', (event) => {
+	if (dont_record_delta) return
 	delta_x = event.movementX || 0
 	delta_y = event.movementY || 0
 })
