@@ -7,7 +7,7 @@ local VIEW_WIDTH = 320
 local VIEW_HEIGHT = 240
 
 local kosmos = require("./kosmos")(VIEW_WIDTH, VIEW_HEIGHT)
-local pengar_mesh = require("./demo/pengar")
+local pengar_mesh = require("./demo/penger")
 local cube_mesh = require("./demo/cube")
 
 local pengar = kosmos.mesh(pengar_mesh)
@@ -33,6 +33,8 @@ local move_direction = vector.zero
 local mouse_delta = vector.zero
 local obj_rot = 0
 
+local budget_consumed_percentage = 0
+
 local function FRAME(delta: number): (buffer)
 	camera_yaw -= mouse_delta.x * SENSITIVITY * delta
 	camera_pitch += mouse_delta.y * SENSITIVITY * delta
@@ -52,8 +54,11 @@ local function FRAME(delta: number): (buffer)
 	kosmos.setObjectRotation(obj1, obj_rot, 0, cos_obj_rot)
 	kosmos.setObjectRotation(obj2, obj_rot, 0, cos_obj_rot)
 
+	local start_tick = os.clock()
 	kosmos.clear()
 	kosmos.render()
+	local end_tick = os.clock()
+	budget_consumed_percentage = (end_tick - start_tick) * 6000
 
 	return IMAGE
 end
@@ -63,9 +68,14 @@ local function INPUT(new_mouse_delta: vector, new_move_direction: vector): ()
 	mouse_delta = new_mouse_delta
 end
 
+local function GET_FRAME_BUDGET_CONSUMED(): (number)
+	return budget_consumed_percentage
+end
+
 return {
 	width = VIEW_WIDTH,
 	height = VIEW_HEIGHT,
 	frame = FRAME,
 	input = INPUT,
+	get_frame_budget_consumed = GET_FRAME_BUDGET_CONSUMED, 
 }
