@@ -9,15 +9,17 @@ local VIEW_HEIGHT = 240
 local kosmos = require("./kosmos")(VIEW_WIDTH, VIEW_HEIGHT)
 local pengar_mesh = require("./demo/penger")
 local cube_mesh = require("./demo/cube")
+local example_texture = require('./demo/example')
 
+local example = kosmos.texture(example_texture)
 local pengar = kosmos.mesh(pengar_mesh)
 local cube = kosmos.mesh(cube_mesh)
 
-local obj1 = kosmos.object(pengar)
+local obj1 = kosmos.object(pengar, example)
 kosmos.setObjectPosition(obj1, vector.create(0.625, 0, 1))
 kosmos.setObjectRotation(obj1, math.pi, 0, 0)
 
-local obj2 = kosmos.object(cube)
+local obj2 = kosmos.object(cube, example)
 kosmos.setObjectPosition(obj2, vector.create(-0.625, 0, 1))
 
 local IMAGE = kosmos.getImageBuffer()

@@ -46,6 +46,12 @@ export type mesh = {
 	faces: {vector}
 }
 
+export type texture = {
+	width: number,
+	height: number,
+	data: buffer
+}
+
 export type object = {
 	mesh_id: number,
 	texture_id: number,
@@ -57,6 +63,7 @@ export type object = {
 }
 
 local NEAR = 0.01
+local NO_TEXTURE_ID = 0xffff
 
 local DEFAULT_RIGHT = vector.create(-1, 0, 0)
 local DEFAULT_UP = vector.create(0, 1, 0)
@@ -289,7 +296,11 @@ return function (width: number, height: number)
 	end
 
 	-- Rasterizes a triangle.
-	local function draw_triangle(a: vector, b: vector, c: vector, at: vector, bt: vector, ct: vector, texture_id: number): ()
+	local function draw_triangle(
+		a: vector, b: vector, c: vector,
+		at: vector, bt: vector, ct: vector,
+		tw: number, th: number, trs: number, td: buffer
+	): ()
 		-- Screen-space projection
 		local ax, ay, az = project_to_screen(a)
 		local bx, by, bz = project_to_screen(b)
@@ -433,16 +444,22 @@ return function (width: number, height: number)
 					local inv_w = 1 / w
 					local u = uw * inv_w
 					local v = vw * inv_w
-					-- Immediately store the UV first (for a pipeline trick)
-					local r = (u * 255) // 1
-					local g = (v * 255) // 1
-					local pixel_data = 0xff000000 + (r // 1) * 0x10000 + (g // 1) * 0x100
+
+					-- Map to texture
+					local s = math.clamp((u * tw) // 1, 0, tw)
+					local t = math.clamp((v * th) // 1, 0, th)
+					local color = buffer.readu32(td, t * trs + s * 4)
+
+					-- Gradient debug pattern for UV
+					-- local s = (u * 255) // 1
+					-- local t = (v * 255) // 1
+					-- local color = texture_id * 0x10000 + t * 0x100 + s * 0x1
 
 					-- Checkerboard debug pattern for UV
 					-- local checker = (((u * 10) // 1 + (v * 10) // 1) % 2) * 255
-					-- local pixel_data = 0xff000000 + checker * 0x10101
+					-- local color = 0xff000000 + checker * 0x10101
 
-					buffer.writeu32(IMAGE, offset, pixel_data)
+					buffer.writeu32(IMAGE, offset, color)
 					buffer.writef32(Z, offset, w)
 				end
 
@@ -516,16 +533,22 @@ return function (width: number, height: number)
 					local inv_w = 1 / w
 					local u = uw * inv_w
 					local v = vw * inv_w
-					-- Immediately store the UV first (for a pipeline trick)
-					local r = (u * 255) // 1
-					local g = (v * 255) // 1
-					local pixel_data = 0xff000000 + (r // 1) * 0x10000 + (g // 1) * 0x100
+
+					-- Map to texture
+					local s = math.clamp((u * tw) // 1, 0, tw)
+					local t = math.clamp((v * th) // 1, 0, th)
+					local color = buffer.readu32(td, t * trs + s * 4)
+
+					-- Gradient debug pattern for UV
+					-- local s = (u * 255) // 1
+					-- local t = (v * 255) // 1
+					-- local color = texture_id * 0x10000 + t * 0x100 + s * 0x1
 
 					-- Checkerboard debug pattern for UV
 					-- local checker = (((u * 10) // 1 + (v * 10) // 1) % 2) * 255
-					-- local pixel_data = 0xff000000 + checker * 0x10101
+					-- local color = 0xff000000 + checker * 0x10101
 
-					buffer.writeu32(IMAGE, offset, pixel_data)
+					buffer.writeu32(IMAGE, offset, color)
 					buffer.writef32(Z, offset, w)
 				end
 
@@ -541,6 +564,7 @@ return function (width: number, height: number)
 	end
 
 	local MESHES: {mesh} = table.create(4)
+	local TEXTURES: {texture} = table.create(4)
 	local OBJECTS: {object} = table.create(16)
 	local OBJECTS_CHANGED: {boolean} = table.create(16)
 	local OBJECT_TRANSFORMS: {{vector}} = table.create(16)
@@ -548,6 +572,11 @@ return function (width: number, height: number)
 	local function MESH(mesh: mesh): (number)
 		table.insert(MESHES, mesh)
 		return #MESHES
+	end
+
+	local function TEXTURE(texture: texture): (number)
+		table.insert(TEXTURES, texture)
+		return #TEXTURES
 	end
 
 	local function OBJECT(mesh_id: number, texture_id: number?, render: boolean?): (number)
@@ -559,7 +588,7 @@ return function (width: number, height: number)
 
 		local object = {
 			mesh_id = mesh_id,
-			texture_id = texture_id or 0xffff,
+			texture_id = texture_id or NO_TEXTURE_ID,
 			position = vector.zero,
 			right = DEFAULT_RIGHT,
 			up = DEFAULT_UP,
@@ -614,7 +643,12 @@ return function (width: number, height: number)
 
 			local faces = mesh.faces
 			local uvs = mesh.uvs
-			local texture_id = object.texture_id
+			local texture = TEXTURES[object.texture_id]
+
+			local tw = texture.width - 1
+			local th = texture.height - 1
+			local trs = texture.width * 4
+			local td = texture.data
 
 			-- Actual render
 			for _, face in faces do
@@ -644,10 +678,10 @@ return function (width: number, height: number)
 				-- Rasterizing and shading 
 
 				if tri_count == 1 then
-					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, texture_id)
+					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
 				elseif tri_count == 2 then
-					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, texture_id)
-					draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, texture_id)
+					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+					draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td)
 				end
 			end
 		end
@@ -666,6 +700,7 @@ return function (width: number, height: number)
 
 	return {
 		mesh = MESH;
+		texture = TEXTURE;
 		object = OBJECT;
 
 		setObjectPosition = SET_OBJECT_POSITION;

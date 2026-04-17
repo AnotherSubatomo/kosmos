@@ -3,6 +3,8 @@
 --!optimize 2
 --!native
 
+_G.ROBLOX = true
+
 local program = require("./kosmos-renderer/demo")
 local frame = program.frame
 local input = program.input
