@@ -6,6 +6,7 @@
 local program = require("./kosmos-renderer/demo")
 local frame = program.frame
 local input = program.input
+local get_frame_budget_consumed = program.get_frame_budget_consumed
 
 local view_size = Vector2.new(program.width, program.height)
 
@@ -54,6 +55,19 @@ local function main()
 	UI.IgnoreGuiInset = true
 	UI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
+	local FrameBudgetDebug = New 'TextLabel'
+	FrameBudgetDebug.AutomaticSize = Enum.AutomaticSize.XY
+	FrameBudgetDebug.BackgroundColor3 = Color3.fromHex '000000'
+	FrameBudgetDebug.BorderColor3 = Color3.fromHex '000000'
+	FrameBudgetDebug.BorderSizePixel = 2
+	FrameBudgetDebug.AnchorPoint = Vector2.new(1, 0)
+	FrameBudgetDebug.Position = UDim2.new(1, -20, 0, 20)
+	FrameBudgetDebug.Size = UDim2.fromScale(0, 0)
+	FrameBudgetDebug.ZIndex = 1
+	FrameBudgetDebug.FontFace = Font.fromName 'RobotoMono'
+	FrameBudgetDebug.TextColor3 = Color3.fromHex 'c86809'
+	FrameBudgetDebug.TextSize = 12
+
 	local Backdrop = New 'Frame'
 	Backdrop.Size = UDim2.fromScale(1, 1)
 	Backdrop.BackgroundColor3 = Color3.fromHex '000000'
@@ -77,13 +91,18 @@ local function main()
 		local mouse_delta = UserInput:GetMouseDelta()
 		local move_direction = GetMoveDirection(UserInput:GetKeysPressed())
 		input(mouse_delta, move_direction)
+
 		local ImageBuffer = frame(delta)
 		Image:WritePixelsBuffer(Vector2.zero, view_size, ImageBuffer)
+
+		local budget = get_frame_budget_consumed() * 1000 // 1 / 1000
+		FrameBudgetDebug.Text = `Frame budget consumed: {budget}%`
 	end)
 
 	Viewport.ImageContent = ImageContent
 	Viewport.Parent = UI
 	Backdrop.Parent = UI
+	FrameBudgetDebug.Parent = UI
 	UI.Parent = Client.PlayerGui
 end
 
