@@ -3,17 +3,52 @@
 	kosmos - Platform-agnostic 3D renderer written in Luau
 	Author: @AnotherSubatomo (GitHub)
 	SPDX-License-Identifier: MPL-2.0
+]=]
 
-	* Vertex winding order is "counter-clockwise = front-facing"
+--[=[
+	SUPPLEMENTARY INFORMATION ABOUT THE IMPLEMENTATION
+	==================================================
+
+	# Vertex winding order: counter-clockwise = front-facing
+
+	# Currently, the rendering pipeline looks like this:
+	meshdata -> world transforms -> camera transforms ->
+	culling -> clipping -> rasterization -> output image
+
+	# Depth interpolation conventions:
+		This renderer operates in camera space where:
+		z = forward distance from the camera (linear in 3D space)
+
+		During rasterization, we use:
+		w = 1 / z
+
+		Reason:
+		Perspective projection (x/z, y/z) makes attributes non-linear in screen space.
+		However, 1/z varies linearly across the screen, so we interpolate w instead of z.
+
+		Notes for experienced readers:
+		- This "w" is NOT clip-space homogeneous w from a full graphics pipeline.
+		- It is simply the reciprocal of camera-space z.
+		- The depth buffer stores w (i.e., a w-buffer), not z.
+		- Depth test uses: larger w = closer pixel.
+
+		This matches the behavior of perspective-correct interpolation used in GPUs,
+		without implementing a full homogeneous clip-space pipeline.
 ]=]
 
 --!strict
 --!optimize 2
 --!native
 
-export type mesh = {vertices: {vector}, faces: {vector}}
+export type mesh = {
+	vertices: {vector},
+	uvs: {vector},
+	faces: {vector}
+}
+
 export type object = {
 	mesh_id: number,
+	texture_id: number,
 	position: vector,
 	right: vector,
 	up: vector,
@@ -29,32 +64,18 @@ local DEFAULT_FORWARD = vector.create(0, 0, 1)
 
 local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
 
-local function intersect__scalar_a(ax: number, ay: number, az: number, b: vector): (vector)
+local function intersect(a: vector, auv: vector, b: vector, buv: vector): (vector, vector)
+	local ax, ay, az = a.x, a.y, a.z
 	local dz = b.z - az
 	if dz == 0 then
-		return vector.create(ax, ay, NEAR)
+		return vector.create(ax, ay, NEAR), auv
 	else
 		local t = (NEAR - az) / dz
 		return vector.create(
 			ax + (b.x - ax) * t,
 			ay + (b.y - ay) * t,
 			NEAR
-		)
-	end
-end
-
-local function intersect__scalar_b(a: vector, bx: number, by: number, bz: number): (vector)
-	local ax, ay, az = a.x, a.y, a.z
-	local dz = bz - az
-	if dz == 0 then
-		return vector.create(ax, ay, NEAR)
-	else
-		local t = (NEAR - az) / dz
-		return vector.create(
-			ax + (bx - ax) * t,
-			ay + (by - ay) * t,
-			NEAR
-		)
+		), vector.lerp(auv, buv, t)
 	end
 end
 
@@ -71,11 +92,6 @@ return function (width: number, height: number)
 	local IMAGE = buffer.create(IMAGE_MEMSIZE)
 
 	local Z = buffer.create(IMAGE_MEMSIZE)
-	local Z_CLEAR = buffer.create(IMAGE_MEMSIZE)
-
-	for offset = 0, IMAGE_MEMSIZE - 4, 4 do
-		buffer.writeu32(Z_CLEAR, offset, 0x7F800000)
-	end
 
 	local LIGHT_DIR = vector.normalize(vector.create(0.3, 1, 0.5))
 
@@ -93,10 +109,7 @@ return function (width: number, height: number)
 	local FORWARD = DEFAULT_FORWARD
 	local SCALE = INV_ASPECT_RATIO
 
-	local function clear_z_buffer(): ()
-		buffer.copy(Z, 0, Z_CLEAR, 0, IMAGE_MEMSIZE)
-	end
-
+	-- Recomputes the orthogonal bases according to the euler rotations given.
 	local function calculate_basis(yaw: number, pitch: number, roll: number): (vector, vector, vector)
 		local cy = math.cos(yaw)
 		local sy = math.sin(yaw)
@@ -105,13 +118,12 @@ return function (width: number, height: number)
 
 		local forward = vector.create(sy * cp, -sp, cy * cp)
 
-		-- right = forward * world_up
 		local right = vector.normalize(vector.cross(forward, WORLD_UP))
 
-		-- recompute up to ensure orthogonality
+		-- Recompute up to ensure orthogonality
 		local up = vector.normalize(vector.cross(right, forward))
 
-		-- apply roll (rotate right/up around forward)
+		-- Apply roll (rotate right/up around forward)
 		if roll ~= 0 then
 			local cr = math.cos(roll)
 			local sr = math.sin(roll)
@@ -158,6 +170,7 @@ return function (width: number, height: number)
 		CAMERA_DIRTY = true
 	end
 
+	-- Projects the vertex into screen space. (the unmodified `z` is also returned)
 	local function project_to_screen(v: vector): (number, number, number)
 		local z = v.z
 		local px = (v.x/z) * SCALE
@@ -169,6 +182,7 @@ return function (width: number, height: number)
 			z
 	end
 
+	-- Transforms the set of vertices into world + camera space.
 	local function transform(vertices: {vector}, transforms: {vector}, object: object): ()
 		-- * commented since they're implicitly overwritten, though
 		--   when it makes more sense, I might uncomment this...
@@ -199,9 +213,11 @@ return function (width: number, height: number)
 		end
 	end
 
-	local C1, C2, C3, C4, C5, C6
-	
-	local function clip_triangle(a: vector, b: vector, c: vector): (number)
+	local CV1, CV2, CV3, CV4, CV5, CV6
+	local CT1, CT2, CT3, CT4, CT5, CT6
+
+	-- Clips triangles near the camera plane into y-monotone triangle/s. (or none, where the triangle gets skipped)
+	local function clip_triangle(a: vector, b: vector, c: vector, at: vector, bt: vector, ct: vector): (number)
 		local ai = a.z >= NEAR
 		local bi = b.z >= NEAR
 		local ci = c.z >= NEAR
@@ -210,7 +226,8 @@ return function (width: number, height: number)
 
 		-- Fully inside
 		if count == 3 then
-			C1, C2, C3 = a, b, c
+			CV1, CV2, CV3 = a, b, c
+			CT1, CT2, CT3 = at, bt, ct
 			return 1
 		end
 
@@ -221,78 +238,122 @@ return function (width: number, height: number)
 
 		-- 1 inside --> 1 triangle
 		if count == 1 then
-			local inV, out1, out2
+			local inV, outV1, outV2
+			local inT, outT1, outT2
 
 			if ai then
-				inV, out1, out2 = a, b, c
+				inV, outV1, outV2 = a, b, c
+				inT, outT1, outT2 = at, bt, ct
 			elseif bi then
-				inV, out1, out2 = b, c, a
+				inV, outV1, outV2 = b, c, a
+				inT, outT1, outT2 = bt, ct, at
 			else
-				inV, out1, out2 = c, a, b
+				inV, outV1, outV2 = c, a, b
+				inT, outT1, outT2 = ct, at, bt
 			end
 
-			local inV_x, inV_y, inV_z = inV.x, inV.y, inV.z
-
-			C1 = inV
-			C2 = intersect__scalar_a(inV_x, inV_y, inV_z, out1)
-			C3 = intersect__scalar_a(inV_x, inV_y, inV_z, out2)
+			CV1, CT1 = inV, inT
+			CV2, CT2 = intersect(inV, inT, outV1, outT1)
+			CV3, CT3 = intersect(inV, inT, outV2, outT2)
 
 			return 1
 		end
 
 		-- 2 inside --> quad --> 2 triangles
-		local in1, in2, outV
+		local outV, inV1, inV2
+		local outT, inT1, inT2
 
 		if not ai then
-			outV, in1, in2 = a, b, c
+			outV, inV1, inV2 = a, b, c
+			outT, inT1, inT2 = at, bt, ct
 		elseif not bi then
-			outV, in1, in2 = b, c, a
+			outV, inV1, inV2 = b, c, a
+			outT, inT1, inT2 = bt, ct, at
 		else
-			outV, in1, in2 = c, a, b
+			outV, inV1, inV2 = c, a, b
+			outT, inT1, inT2 = ct, at, bt
 		end
 
-		local outV_x, outV_y, outV_z = outV.x, outV.y, outV.z
-
-		local i1 = intersect__scalar_b(in1, outV_x, outV_y, outV_z)
-		local i2 = intersect__scalar_b(in2, outV_x, outV_y, outV_z)
+		local iV1, iT1 = intersect(inV1, inT1, outV, outT)
+		local iV2, iT2 = intersect(inV2, inT2, outV, outT)
 
 		-- First triangle
-		C1, C2, C3 = in1, in2, i1
+		CV1, CV2, CV3 = inV1, inV2, iV1
+		CT1, CT2, CT3 = inT1, inT2, iT1
 
 		-- Second triangle
-		C4, C5, C6 = in2, i2, i1
+		CV4, CV5, CV6 = inV2, iV2, iV1
+		CT4, CT5, CT6 = inT2, iT2, iT1
 
 		return 2
 	end
 
-	local function draw_triangle(a: vector, b: vector, c: vector, color: number): ()
-		-- Projection
+	-- Rasterizes a triangle.
+	local function draw_triangle(a: vector, b: vector, c: vector, at: vector, bt: vector, ct: vector, texture_id: number): ()
+		-- Screen-space projection
 		local ax, ay, az = project_to_screen(a)
 		local bx, by, bz = project_to_screen(b)
 		local cx, cy, cz = project_to_screen(c)
 
-		-- Sort points by Y (a = top, b = mid, c = bottom)
-		if ay > by then ax, ay, az, bx, by, bz = bx, by, bz, ax, ay, az end
-		if ay > cy then ax, ay, az, cx, cy, cz = cx, cy, cz, ax, ay, az end
-		if by > cy then bx, by, bz, cx, cy, cz = cx, cy, cz, bx, by, bz end
+		-- Sort vertices (along with their UV) by ascending Y [c (bottom) -> b -> a (top)]
+		if ay > by then ax, ay, az, at, bx, by, bz, bt = bx, by, bz, bt, ax, ay, az, at end
+		if ay > cy then ax, ay, az, at, cx, cy, cz, ct = cx, cy, cz, ct, ax, ay, az, at end
+		if by > cy then bx, by, bz, bt, cx, cy, cz, ct = cx, cy, cz, ct, bx, by, bz, bt end
 
-		-- Degenerate triangle, return
+		-- Reject degenerate triangle
 		if ay == cy then return end
 
+		-- Precompute vertical distances for interpolation along triangle edges
 		local dy_ab = by - ay
 		local dy_ac = cy - ay
 		local dy_bc = cy - by
 
-		-- Calculate slopes for incremental interpolation
-		-- Edge slopes for each triangle edge in screen space
-		local m_ab = dy_ab == 0 and 0 or (bx - ax) / dy_ab
-		local m_ac = dy_ac == 0 and 0 or (cx - ax) / dy_ac
-		local m_bc = dy_bc == 0 and 0 or (cx - bx) / dy_bc
+		-- Compute reciprocal depth (w = 1/z) for perspective-correct interpolation
+		local aw = 1/az
+		local bw = 1/bz
+		local cw = 1/cz
 
-		-- Depth slopes
-		local mz_ab = dy_ab == 0 and 0 or (bz - az) / dy_ab
-		local mz_ac = dy_ac == 0 and 0 or (cz - az) / dy_ac
-		local mz_bc = dy_bc == 0 and 0 or (cz - bz) / dy_bc
+		-- Pre-multiply UVs by `w` so they interpolate linearly in screen space
+		local auw = at.x * aw
+		local avw = at.y * aw
+
+		local buw = bt.x * bw
+		local bvw = bt.y * bw
+
+		local cuw = ct.x * cw
+		local cvw = ct.y * cw
+
+		-- Calculate slopes for incremental interpolation
+		-- Edge slopes:
+		local m_ab, m_ac, m_bc = 0, 0, 0
+		-- Depth slopes:
+		local mw_ab, mw_ac, mw_bc = 0, 0, 0
+		-- UV slopes:
+		local muw_ab, mvw_ab = 0, 0
+		local muw_ac, mvw_ac = 0, 0
+		local muw_bc, mvw_bc = 0, 0
+
+		-- (the if statements guard against division by zero for flat edges)
+		if dy_ab ~= 0 then
+			m_ab = (bx - ax) / dy_ab
+			mw_ab = (bw - aw) / dy_ab
+			muw_ab = (buw - auw) / dy_ab
+			mvw_ab = (bvw - avw) / dy_ab
+		end
+
+		if dy_ac ~= 0 then
+			m_ac = dy_ac == 0 and 0 or (cx - ax) / dy_ac
+			mw_ac = dy_ac == 0 and 0 or (cw - aw) / dy_ac
+			muw_ac = (cuw - auw) / dy_ac
+			mvw_ac = (cvw - avw) / dy_ac
+		end
+
+		if dy_bc ~= 0 then
+			m_bc = dy_bc == 0 and 0 or (cx - bx) / dy_bc
+			mw_bc = dy_bc == 0 and 0 or (cw - bw) / dy_bc
+			muw_bc = (cuw - buw) / dy_bc
+			mvw_bc = (cvw - bvw) / dy_bc
+		end
 
 		-- Discretize to get scan bounds
 		local y_start  = ay // 1
@@ -301,7 +362,7 @@ return function (width: number, height: number)
 		-- Ensure correct ordering after discretization
 		if y_start > y_end then y_start, y_end = y_end, y_start end
 
-		-- Clamp to viewport height
+		-- Clamp to viewport height (prevents OOB buffer errors)
 		y_start  = math.max(0, y_start)
 		y_end    = math.min(HEIGHT_M_1, y_end)
 
@@ -312,83 +373,166 @@ return function (width: number, height: number)
 		if y_middle < y_start then y_middle = y_start end
 		if y_middle > y_end   then y_middle = y_end   end
 
+		-- Precompute row offset into image buffer
 		local row_stride = y_start * IMAGE_ROW_OFFSET
 
-		-- Start scan loop for the top half...
+		-- Rasterize the top half of triangle (a --> b)
 		for y = y_start, y_middle - 1 do
+			-- Compute the general blend factor
 			local lt = (y - ay)
 			local rt = (y - ay)
 
-			local xl = ax + lt * m_ab
-			local xr = ax + rt * m_ac
+			-- Compute left/right X positions of the scanline
+			local lx = ax + lt * m_ab
+			local rx = ax + rt * m_ac
 
-			local zl = az + lt * mz_ab
-			local zr = az + rt * mz_ac
+			-- Interpolate depth along edges
+			local lw = aw + lt * mw_ab
+			local rw = aw + rt * mw_ac
 
-			-- Ensure correct ordering
-			if xl > xr then
-				xl, xr = xr, xl
-				zl, zr = zr, zl
+			-- Interpolate UV along edges
+			local luw = auw + lt * muw_ab
+			local ruw = auw + rt * muw_ac
+
+			local lvw = avw + lt * mvw_ab
+			local rvw = avw + rt * mvw_ac
+
+			-- Ensure left-to-right ordering
+			if lx > rx then
+				lx, rx = rx, lx
+				lw, rw = rw, lw
+				luw, ruw = ruw, luw
+				lvw, rvw = rvw, lvw
 			end
 
-			local x_start = math.max(0, xl // 1)
-			local x_end   = math.min(WIDTH_M_1, xr // 1)
+			-- Clamp horizontal span to screen bounds
+			local x_start = math.max(0, lx // 1)
+			local x_end   = math.min(WIDTH_M_1, rx // 1)
 			local offset  = row_stride + x_start * 4
 
-			local dx_lr = xr - xl
-			local m_zx = dx_lr == 0 and 0 or (zr - zl) / dx_lr
-			local z = zl
+			-- Compute per-pixel slopes across scanline
+			local dx_lr = rx - lx
+			local m_wx, m_uwx, m_vwx = 0, 0, 0
 
-			-- Inner fill loop
+			if dx_lr ~= 0 then
+				m_wx = (rw - lw) / dx_lr
+				m_uwx = (ruw - luw) / dx_lr
+				m_vwx = (rvw - lvw) / dx_lr
+			end
+
+			-- Adjust starting values (prevents distortion)
+			local dx = x_start - lx
+			local w = lw + dx * m_wx
+			local uw = luw + dx * m_uwx
+			local vw = lvw + dx * m_vwx
+
+			-- Fill pixels across scanline
 			for _ = x_start, x_end do
-				if z < buffer.readf32(Z, offset) then
-					buffer.writeu32(IMAGE, offset, color)
-					buffer.writef32(Z, offset, z)
+				if w > buffer.readf32(Z, offset) then
+					-- Recover perspective-correct UVs
+					local inv_w = 1 / w
+					local u = uw * inv_w
+					local v = vw * inv_w
+					-- Immediately store the UV first (for a pipeline trick)
+					local r = (u * 255) // 1
+					local g = (v * 255) // 1
+					local pixel_data = 0xff000000 + (r // 1) * 0x10000 + (g // 1) * 0x100
+
+					-- Checkerboard debug pattern for UV
+					-- local checker = (((u * 10) // 1 + (v * 10) // 1) % 2) * 255
+					-- local pixel_data = 0xff000000 + checker * 0x10101
+
+					buffer.writeu32(IMAGE, offset, pixel_data)
+					buffer.writef32(Z, offset, w)
 				end
 
-				z += m_zx
+				-- Step interpolants (& byte offset) across X
+				w += m_wx
+				uw += m_uwx
+				vw += m_vwx
 				offset += 4
 			end
 
 			row_stride += IMAGE_ROW_OFFSET
 		end
 
-		-- Sometimes, discretization pushed `y_middle` below the true split, so we bump it up
+		-- Adjust the split if discretization misses the true middle scanline
 		local y_middle_adj = y_middle + (y_middle < by and 1 or 0)
 
-		-- Start scan loop for the bottom half...
+		-- Rasterize bottom half of triangle (b --> c)
 		for y = y_middle_adj, y_end do
+			-- Compute the general blend factor
 			local lt = (y - by)
 			local rt = (y - ay)
 
-			local xl = bx + lt * m_bc
-			local xr = ax + rt * m_ac
+			-- Compute left/right X positions of the scanline
+			local lx = bx + lt * m_bc
+			local rx = ax + rt * m_ac
 
-			local zl = bz + lt * mz_bc
-			local zr = az + rt * mz_ac
+			-- Interpolate depth along edges
+			local lw = bw + lt * mw_bc
+			local rw = aw + rt * mw_ac
 
-			-- Ensure correct ordering
-			if xl > xr then
-				xl, xr = xr, xl
-				zl, zr = zr, zl
+			-- Interpolate UV along edges
+			local luw = buw + lt * muw_bc
+			local ruw = auw + rt * muw_ac
+
+			local lvw = bvw + lt * mvw_bc
+			local rvw = avw + rt * mvw_ac
+
+			-- Ensure left-to-right ordering
+			if lx > rx then
+				lx, rx = rx, lx
+				lw, rw = rw, lw
+				luw, ruw = ruw, luw
+				lvw, rvw = rvw, lvw
 			end
 
-			local x_start = math.max(0, xl // 1)
-			local x_end   = math.min(WIDTH_M_1, xr // 1)
+			-- Clamp horizontal span to screen bounds
+			local x_start = math.max(0, lx // 1)
+			local x_end   = math.min(WIDTH_M_1, rx // 1)
 			local offset  = row_stride + x_start * 4
 
-			local dx_lr = xr - xl
-			local m_zx = dx_lr == 0 and 0 or (zr - zl) / dx_lr
-			local z = zl
+			-- Compute per-pixel slopes across scanline
+			local dx_lr = rx - lx
+			local m_wx, m_uwx, m_vwx = 0, 0, 0
 
-			-- Inner fill loop
+			if dx_lr ~= 0 then
+				m_wx = (rw - lw) / dx_lr
+				m_uwx = (ruw - luw) / dx_lr
+				m_vwx = (rvw - lvw) / dx_lr
+			end
+
+			-- Adjust starting values (prevents distortion)
+			local dx = x_start - lx
+			local w = lw + dx * m_wx
+			local uw = luw + dx * m_uwx
+			local vw = lvw + dx * m_vwx
+
+			-- Fill pixels across scanline
 			for _ = x_start, x_end do
-				if z < buffer.readf32(Z, offset) then
-					buffer.writeu32(IMAGE, offset, color)
-					buffer.writef32(Z, offset, z)
+				if w > buffer.readf32(Z, offset) then
+					-- Recover perspective-correct UVs
+					local inv_w = 1 / w
+					local u = uw * inv_w
+					local v = vw * inv_w
+					-- Immediately store the UV first (for a pipeline trick)
+					local r = (u * 255) // 1
+					local g = (v * 255) // 1
+					local pixel_data = 0xff000000 + (r // 1) * 0x10000 + (g // 1) * 0x100
+
+					-- Checkerboard debug pattern for UV
+					-- local checker = (((u * 10) // 1 + (v * 10) // 1) % 2) * 255
+					-- local pixel_data = 0xff000000 + checker * 0x10101
+
+					buffer.writeu32(IMAGE, offset, pixel_data)
+					buffer.writef32(Z, offset, w)
 				end
 
-				z += m_zx
+				-- Step interpolants (& byte offset) across X
+				w += m_wx
+				uw += m_uwx
+				vw += m_vwx
 				offset += 4
 			end
 
@@ -406,7 +550,7 @@ return function (width: number, height: number)
 		return #MESHES
 	end
 
-	local function OBJECT(mesh_id: number, render: boolean?): (number)
+	local function OBJECT(mesh_id: number, texture_id: number?, render: boolean?): (number)
 		if not MESHES[mesh_id] then
 			error "Tried to create an object for a non-existant mesh."
 		end
@@ -415,6 +559,7 @@ return function (width: number, height: number)
 
 		local object = {
 			mesh_id = mesh_id,
+			texture_id = texture_id or 0xffff,
 			position = vector.zero,
 			right = DEFAULT_RIGHT,
 			up = DEFAULT_UP,
@@ -468,12 +613,18 @@ return function (width: number, height: number)
 			end
 
 			local faces = mesh.faces
+			local uvs = mesh.uvs
+			local texture_id = object.texture_id
 
 			-- Actual render
 			for _, face in faces do
-				local a = transforms[face.x]
-				local b = transforms[face.y]
-				local c = transforms[face.z]
+				local ai = face.x
+				local bi = face.y
+				local ci = face.z
+
+				local a = transforms[ai]
+				local b = transforms[bi]
+				local c = transforms[ci]
 
 				-- Backface culling
 				local ab = b - a
@@ -482,21 +633,21 @@ return function (width: number, height: number)
 
 				if vector.dot(normal, a) >= 0 then continue end
 
+				local at = uvs[ai]
+				local bt = uvs[bi]
+				local ct = uvs[ci]
+
 				-- Near plane triangle clipping
-				local tri_count = clip_triangle(a, b, c)
+				local tri_count = clip_triangle(a, b, c, at, bt, ct)
 				if tri_count == 0 then continue end
 				
 				-- Rasterizing and shading 
-				local n = vector.normalize(normal)
-				local intensity = math.max(0, vector.dot(n, LIGHT_DIR))
-				local shade = math.floor(80 + intensity * 175)
-				local color = 0xff000000 + (shade * 0x10101)
 
 				if tri_count == 1 then
-					draw_triangle(C1, C2, C3, color)
+					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, texture_id)
 				elseif tri_count == 2 then
-					draw_triangle(C1, C2, C3, color)
-					draw_triangle(C4, C5, C6, color)
+					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, texture_id)
+					draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, texture_id)
 				end
 			end
 		end
@@ -505,18 +656,12 @@ return function (width: number, height: number)
 	end
 
 	local function CLEAR(): ()
-		clear_z_buffer()
+		buffer.fill(Z, 0, 0)
 		buffer.fill(IMAGE, 0, 255)
 	end
 
 	local function GET_IMAGE_BUFFER(): (buffer)
 		return IMAGE
-	end
-
-	local function DUMP(): ()
-		print(MESHES)
-		print(OBJECTS)
-		print(OBJECT_TRANSFORMS)
 	end
 
 	return {
@@ -536,7 +681,5 @@ return function (width: number, height: number)
 		clear = CLEAR;
 		render = RENDER;
 		getImageBuffer = GET_IMAGE_BUFFER;
-		
-		dump = DUMP;
 	}
 end
