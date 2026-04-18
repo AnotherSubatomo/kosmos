@@ -59,7 +59,6 @@ export type object = {
 	right: vector,
 	up: vector,
 	forward: vector,
-	render: boolean,
 }
 
 local NEAR = 0.01
@@ -579,7 +578,7 @@ return function (width: number, height: number)
 		return #TEXTURES
 	end
 
-	local function OBJECT(mesh_id: number, texture_id: number?, render: boolean?): (number)
+	local function OBJECT(mesh_id: number, texture_id: number?): (number)
 		if not MESHES[mesh_id] then
 			error "Tried to create an object for a non-existant mesh."
 		end
@@ -593,7 +592,6 @@ return function (width: number, height: number)
 			right = DEFAULT_RIGHT,
 			up = DEFAULT_UP,
 			forward = DEFAULT_FORWARD,
-			render = render ~= false
 		}
 
 		OBJECTS[object_id] = object
@@ -620,16 +618,17 @@ return function (width: number, height: number)
 		OBJECTS_CHANGED[object_id] = true
 	end
 
-	local function SET_OBJECT_VISIBILITY(object_id: number, is_visible: boolean): ()
+	local function SET_OBJECT_TEXTURE(object_id: number, texture_id: number): ()
 		local object = OBJECTS[object_id]
 		if not object then error(ERR_OBJ_DOESNT_EXIST) end
-		object.render = is_visible
+		object.texture_id = texture_id
 		OBJECTS_CHANGED[object_id] = true
 	end
 
 	local function RENDER(): ()
 		for object_id, object in OBJECTS do
-			if not object.render then continue end
+			local texture_id = object.texture_id
+			if texture_id == NO_TEXTURE_ID then continue end
 
 			local mesh = MESHES[object.mesh_id]
 			local transforms = OBJECT_TRANSFORMS[object_id]
@@ -643,7 +642,7 @@ return function (width: number, height: number)
 
 			local faces = mesh.faces
 			local uvs = mesh.uvs
-			local texture = TEXTURES[object.texture_id]
+			local texture = TEXTURES[texture_id]
 
 			local tw = texture.width - 1
 			local th = texture.height - 1
@@ -705,7 +704,7 @@ return function (width: number, height: number)
 
 		setObjectPosition = SET_OBJECT_POSITION;
 		setObjectRotation = SET_OBJECT_ROTATION;
-		setObjectVisiblity = SET_OBJECT_VISIBILITY;
+		setObjectTexture = SET_OBJECT_TEXTURE;
 
 		setCameraPosition = SET_CAMERA_POSITION;
 		setCameraRotation = SET_CAMERA_ROTATION;
