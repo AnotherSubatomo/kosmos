@@ -194,6 +194,10 @@ return function (width: number, height: number)
 		return right, up, forward
 	end
 
+	local function GET_CAMERA_BASIS(): (vector, vector, vector)
+		return RIGHT, UP, FORWARD
+	end
+
 	local function SET_CAMERA_POSITION(position: vector?): ()
 		if not position or position == POSITION then return end
 		POSITION = position
@@ -207,23 +211,6 @@ return function (width: number, height: number)
 		if world_up and world_up ~= WORLD_UP then WORLD_UP = world_up end
 		RIGHT, UP, FORWARD = calculate_basis(YAW, PITCH, ROLL)
 		CAMERA_DIRTY = true
-	end
-
-	local function SET_SKYBOX_TEXTURES(
-		front_id: number?, back_id: number?,
-		left_id: number?, right_id: number?,
-		top_id: number?, bottom_id: number?
-	): ()
-		if front_id  and front_id  ~= SKYBOX_TEXTURES[1] then SKYBOX_TEXTURES[1] = front_id  end	
-		if back_id   and back_id   ~= SKYBOX_TEXTURES[2] then SKYBOX_TEXTURES[2] = back_id   end
-		if left_id   and left_id   ~= SKYBOX_TEXTURES[3] then SKYBOX_TEXTURES[3] = left_id   end
-		if right_id  and right_id  ~= SKYBOX_TEXTURES[4] then SKYBOX_TEXTURES[4] = right_id  end
-		if top_id    and top_id    ~= SKYBOX_TEXTURES[5] then SKYBOX_TEXTURES[5] = top_id    end
-		if bottom_id and bottom_id ~= SKYBOX_TEXTURES[6] then SKYBOX_TEXTURES[6] = bottom_id end
-	end
-
-	local function GET_CAMERA_BASIS(): (vector, vector, vector)
-		return RIGHT, UP, FORWARD
 	end
 
 	local function SET_FIELD_OF_VIEW(fov: number?): ()
@@ -241,6 +228,19 @@ return function (width: number, height: number)
 	local function SET_LIGHTING_DIRECTION(direction: vector): ()
 		if not direction or direction == LIGHT_DIR then return end
 		LIGHT_DIR = vector.normalize(direction)
+	end
+
+	local function SET_SKYBOX_TEXTURES(
+		front_id: number?, back_id: number?,
+		left_id: number?, right_id: number?,
+		top_id: number?, bottom_id: number?
+	): ()
+		if front_id  and front_id  ~= SKYBOX_TEXTURES[1] then SKYBOX_TEXTURES[1] = front_id  end	
+		if back_id   and back_id   ~= SKYBOX_TEXTURES[2] then SKYBOX_TEXTURES[2] = back_id   end
+		if left_id   and left_id   ~= SKYBOX_TEXTURES[3] then SKYBOX_TEXTURES[3] = left_id   end
+		if right_id  and right_id  ~= SKYBOX_TEXTURES[4] then SKYBOX_TEXTURES[4] = right_id  end
+		if top_id    and top_id    ~= SKYBOX_TEXTURES[5] then SKYBOX_TEXTURES[5] = top_id    end
+		if bottom_id and bottom_id ~= SKYBOX_TEXTURES[6] then SKYBOX_TEXTURES[6] = bottom_id end
 	end
 
 	-- Projects the vertex into screen space. (the unmodified `z` is also returned)
@@ -690,6 +690,20 @@ return function (width: number, height: number)
 		return object_id
 	end
 
+	local function SET_OBJECT_MESH(object_id: number, mesh_id: number): ()
+		local object = OBJECTS[object_id]
+		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		object.mesh_id = mesh_id
+		OBJECTS_CHANGED[object_id] = true
+	end
+
+	local function SET_OBJECT_TEXTURE(object_id: number, texture_id: number): ()
+		local object = OBJECTS[object_id]
+		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		object.texture_id = texture_id
+		OBJECTS_CHANGED[object_id] = true
+	end
+
 	local function SET_OBJECT_POSITION(object_id: number, position: vector): ()
 		local object = OBJECTS[object_id]
 		if not object then error(ERR_OBJ_DOESNT_EXIST) end
@@ -701,13 +715,6 @@ return function (width: number, height: number)
 		local object = OBJECTS[object_id]
 		if not object then error(ERR_OBJ_DOESNT_EXIST) end
 		object.right, object.up, object.forward = calculate_basis(yaw, pitch, roll)
-		OBJECTS_CHANGED[object_id] = true
-	end
-
-	local function SET_OBJECT_TEXTURE(object_id: number, texture_id: number): ()
-		local object = OBJECTS[object_id]
-		if not object then error(ERR_OBJ_DOESNT_EXIST) end
-		object.texture_id = texture_id
 		OBJECTS_CHANGED[object_id] = true
 	end
 
@@ -861,13 +868,14 @@ return function (width: number, height: number)
 		texture = TEXTURE;
 		object = OBJECT;
 
+		setObjectMesh = SET_OBJECT_MESH;
+		setObjectTexture = SET_OBJECT_TEXTURE;
 		setObjectPosition = SET_OBJECT_POSITION;
 		setObjectRotation = SET_OBJECT_ROTATION;
-		setObjectTexture = SET_OBJECT_TEXTURE;
 
+		getCameraBasis = GET_CAMERA_BASIS;
 		setCameraPosition = SET_CAMERA_POSITION;
 		setCameraRotation = SET_CAMERA_ROTATION;
-		getCameraBasis = GET_CAMERA_BASIS;
 		setFieldOfView = SET_FIELD_OF_VIEW;
 
 		setLightingAmbient = SET_LIGHTING_AMBIENT;
