@@ -7,20 +7,24 @@ local VIEW_WIDTH = 320
 local VIEW_HEIGHT = 240
 
 local kosmos = require("./kosmos")(VIEW_WIDTH, VIEW_HEIGHT)
-local pengar_mesh = require("./demo/penger")
-local cube_mesh = require("./demo/cube")
-local example_texture = require('./demo/example')
+local pengar_mesh = require("./demo/meshes/penger")
+local cube_mesh = require("./demo/meshes/cube")
+local diamond_plate_texture = require("./demo/textures/diamond_plate")
+local skybox_texture = require("./demo/textures/skybox")
 
-local example = kosmos.texture(example_texture)
+local diamond_plate = kosmos.texture(diamond_plate_texture)
+local skybox = kosmos.texture(skybox_texture)
 local pengar = kosmos.mesh(pengar_mesh)
 local cube = kosmos.mesh(cube_mesh)
 
-local obj1 = kosmos.object(pengar, example)
+local obj1 = kosmos.object(pengar, diamond_plate)
 kosmos.setObjectPosition(obj1, vector.create(0.625, 0, 1))
 kosmos.setObjectRotation(obj1, math.pi, 0, 0)
 
-local obj2 = kosmos.object(cube, example)
+local obj2 = kosmos.object(cube, diamond_plate)
 kosmos.setObjectPosition(obj2, vector.create(-0.625, 0, 1))
+
+kosmos.setSkyboxTextures(skybox, skybox, skybox, skybox, skybox, skybox)
 
 local IMAGE = kosmos.getImageBuffer()
 
