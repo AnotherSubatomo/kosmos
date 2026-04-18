@@ -70,6 +70,53 @@ local DEFAULT_FORWARD = vector.create(0, 0, 1)
 
 local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
 
+local SBv1 = vector.create(2048, 2048, 2048)
+local SBv2 = vector.create(-2048, 2048, 2048)
+local SBv3 = vector.create(-2048, -2048, 2048)
+local SBv4 = vector.create(2048, -2048, 2048)
+local SBv5 = vector.create(2048, 2048, -2048)
+local SBv6 = vector.create(-2048, 2048, -2048)
+local SBv7 = vector.create(-2048, -2048, -2048)
+local SBv8 = vector.create(2048, -2048, -2048)
+
+local SBt11 = vector.create(1, 1)
+local SBt01 = vector.create(0, 1)
+local SBt00 = vector.create(0, 0)
+local SBt10 = vector.create(1, 0)
+
+local DEFAULT_SKYBOX_TEXTURES = {
+	NO_TEXTURE_ID,
+	NO_TEXTURE_ID,
+	NO_TEXTURE_ID,
+	NO_TEXTURE_ID,
+	NO_TEXTURE_ID,
+	NO_TEXTURE_ID,
+}
+local SKYBOX_VERTICES = {
+	SBv1, SBv2, SBv3, SBv4, -- Front
+	SBv5, SBv6, SBv7, SBv8, -- Back
+	SBv2, SBv6, SBv7, SBv3, -- Left
+	SBv1, SBv5, SBv8, SBv4, -- Right
+	SBv1, SBv2, SBv6, SBv5, -- Top
+	SBv4, SBv3, SBv7, SBv8, -- Bottom
+}
+local SKYBOX_UVS = {
+	SBt11, SBt01, SBt00, SBt10, -- Front
+	SBt11, SBt01, SBt00, SBt10, -- Back
+	SBt11, SBt01, SBt00, SBt10, -- Left
+	SBt11, SBt01, SBt00, SBt10, -- Right
+	SBt11, SBt01, SBt00, SBt10, -- Top
+	SBt11, SBt01, SBt00, SBt10, -- Bottom
+}
+local SKYBOX_FACES = {
+	{1, 2, 3, 4}, -- Front
+	{5, 6, 7, 8}, -- Back
+	{9, 10, 11, 12}, -- Left
+	{13, 14, 15, 16}, -- Right
+	{17, 18, 19, 20}, -- Top
+	{21, 22, 23, 24}, -- Bottom
+}
+
 local function intersect(a: vector, auv: vector, b: vector, buv: vector): (vector, vector)
 	local ax, ay, az = a.x, a.y, a.z
 	local dz = b.z - az
@@ -96,10 +143,11 @@ return function (width: number, height: number)
 	local IMAGE_ROW_OFFSET = 4 * VIEW_WIDTH
 	local IMAGE_MEMSIZE = IMAGE_ROW_OFFSET * VIEW_HEIGHT
 	local IMAGE = buffer.create(IMAGE_MEMSIZE)
-
 	local Z = buffer.create(IMAGE_MEMSIZE)
 
 	local LIGHT_DIR = vector.normalize(vector.create(0.3, 1, 0.5))
+	local SKYBOX_TEXTURES = table.clone(DEFAULT_SKYBOX_TEXTURES)
+	local SKYBOX_TRANSFORMS = table.create(24)
 
 	local CAMERA_DIRTY = false
 	
@@ -157,6 +205,19 @@ return function (width: number, height: number)
 		if world_up and world_up ~= WORLD_UP then WORLD_UP = world_up end
 		RIGHT, UP, FORWARD = calculate_basis(YAW, PITCH, ROLL)
 		CAMERA_DIRTY = true
+	end
+
+	local function SET_SKYBOX_TEXTURES(
+		front_id: number?, back_id: number?,
+		left_id: number?, right_id: number?,
+		top_id: number?, bottom_id: number?
+	): ()
+		if front_id  and front_id  ~= SKYBOX_TEXTURES[1] then SKYBOX_TEXTURES[1] = front_id  end	
+		if back_id   and back_id   ~= SKYBOX_TEXTURES[2] then SKYBOX_TEXTURES[2] = back_id   end
+		if left_id   and left_id   ~= SKYBOX_TEXTURES[3] then SKYBOX_TEXTURES[3] = left_id   end
+		if right_id  and right_id  ~= SKYBOX_TEXTURES[4] then SKYBOX_TEXTURES[4] = right_id  end
+		if top_id    and top_id    ~= SKYBOX_TEXTURES[5] then SKYBOX_TEXTURES[5] = top_id    end
+		if bottom_id and bottom_id ~= SKYBOX_TEXTURES[6] then SKYBOX_TEXTURES[6] = bottom_id end
 	end
 
 	local function GET_CAMERA_BASIS(): (vector, vector, vector)
@@ -626,6 +687,7 @@ return function (width: number, height: number)
 	end
 
 	local function RENDER(): ()
+		-- Render objects
 		for object_id, object in OBJECTS do
 			local texture_id = object.texture_id
 			if texture_id == NO_TEXTURE_ID then continue end
@@ -685,6 +747,68 @@ return function (width: number, height: number)
 			end
 		end
 
+		-- Transform skybox
+		for i, v in SKYBOX_VERTICES do
+			-- Position the skybox at the camera
+			local pos_v = v - POSITION
+
+			-- Camera-space transformation
+			local cam_v = vector.create(
+				vector.dot(pos_v, RIGHT),
+				vector.dot(pos_v, UP),
+				vector.dot(pos_v, FORWARD)
+			)
+
+			SKYBOX_TRANSFORMS[i] = cam_v
+		end
+
+		-- Render skybox
+		for index, face in SKYBOX_FACES do
+			local texture_id = SKYBOX_TEXTURES[index]
+			if texture_id == NO_TEXTURE_ID then continue end
+
+			local texture = TEXTURES[texture_id]
+			local tw = texture.width - 1
+			local th = texture.height - 1
+			local trs = texture.width * 4
+			local td = texture.data
+
+			local ai = face[1]
+			local bi = face[2]
+			local ci = face[3]
+			local di = face[4]
+
+			local a = SKYBOX_TRANSFORMS[ai]
+			local b = SKYBOX_TRANSFORMS[bi]
+			local c = SKYBOX_TRANSFORMS[ci]
+			local d = SKYBOX_TRANSFORMS[di]
+
+			local at = SKYBOX_UVS[ai]
+			local bt = SKYBOX_UVS[bi]
+			local ct = SKYBOX_UVS[ci]
+			local dt = SKYBOX_UVS[di]
+
+			local tri_count = 0
+
+			-- Triangle one:
+			tri_count = clip_triangle(a, c, b, at, ct, bt)
+			if tri_count == 1 then
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+			elseif tri_count == 2 then
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td)
+			end
+
+			-- Triangle two:
+			tri_count = clip_triangle(a, d, c, at, dt, ct)
+			if tri_count == 1 then
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+			elseif tri_count == 2 then
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td)
+			end
+		end
+	
 		CAMERA_DIRTY = false
 	end
 
@@ -708,6 +832,7 @@ return function (width: number, height: number)
 
 		setCameraPosition = SET_CAMERA_POSITION;
 		setCameraRotation = SET_CAMERA_ROTATION;
+		setSkyboxTextures = SET_SKYBOX_TEXTURES;
 		setFieldOfView = SET_FIELD_OF_VIEW;
 		setLightingDirection = SET_LIGHTING_DIRECTION;
 		getCameraBasis = GET_CAMERA_BASIS;
