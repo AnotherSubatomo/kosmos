@@ -145,7 +145,9 @@ return function (width: number, height: number)
 	local IMAGE = buffer.create(IMAGE_MEMSIZE)
 	local Z = buffer.create(IMAGE_MEMSIZE)
 
-	local LIGHT_DIR = vector.normalize(vector.create(0.3, 1, 0.5))
+	local AMBIENT = 0.4 -- base light (0–1)
+	local LIGHT_DIR = vector.normalize(vector.one)
+
 	local SKYBOX_TEXTURES = table.clone(DEFAULT_SKYBOX_TEXTURES)
 	local SKYBOX_TRANSFORMS = table.create(24)
 
@@ -231,10 +233,14 @@ return function (width: number, height: number)
 		CAMERA_DIRTY = true
 	end
 
+	local function SET_LIGHTING_AMBIENT(ambient: number): ()
+		if not ambient or ambient == AMBIENT then return end
+		AMBIENT = ambient
+	end
+
 	local function SET_LIGHTING_DIRECTION(direction: vector): ()
 		if not direction or direction == LIGHT_DIR then return end
-		LIGHT_DIR = direction
-		CAMERA_DIRTY = true
+		LIGHT_DIR = vector.normalize(direction)
 	end
 
 	-- Projects the vertex into screen space. (the unmodified `z` is also returned)
@@ -359,7 +365,8 @@ return function (width: number, height: number)
 	local function draw_triangle(
 		a: vector, b: vector, c: vector,
 		at: vector, bt: vector, ct: vector,
-		tw: number, th: number, trs: number, td: buffer
+		tw: number, th: number, trs: number, td: buffer,
+		shade_factor: number
 	): ()
 		-- Screen-space projection
 		local ax, ay, az = project_to_screen(a)
@@ -508,7 +515,16 @@ return function (width: number, height: number)
 					-- Map to texture
 					local s = math.clamp((u * tw) // 1, 0, tw)
 					local t = math.clamp((v * th) // 1, 0, th)
-					local color = buffer.readu32(td, t * trs + s * 4)
+					local texture_color = buffer.readu32(td, t * trs + s * 4)
+
+					-- Blend the texture to the shading
+					local rb = bit32.band(texture_color, 0x00FF00FF) * shade_factor
+					local g = bit32.band(texture_color, 0x0000FF00) * shade_factor
+
+					rb = bit32.band(bit32.rshift(rb, 8), 0x00FF00FF)
+					g = bit32.band(bit32.rshift(g, 8), 0x0000FF00)
+
+					local color = 0xFF000000 + rb + g
 
 					-- Gradient debug pattern for UV
 					-- local s = (u * 255) // 1
@@ -597,7 +613,16 @@ return function (width: number, height: number)
 					-- Map to texture
 					local s = math.clamp((u * tw) // 1, 0, tw)
 					local t = math.clamp((v * th) // 1, 0, th)
-					local color = buffer.readu32(td, t * trs + s * 4)
+					local texture_color = buffer.readu32(td, t * trs + s * 4)
+
+					-- Blend the texture to the shading
+					local rb = bit32.band(texture_color, 0x00FF00FF) * shade_factor
+					local g = bit32.band(texture_color, 0x0000FF00) * shade_factor
+
+					rb = bit32.band(bit32.rshift(rb, 8), 0x00FF00FF)
+					g = bit32.band(bit32.rshift(g, 8), 0x0000FF00)
+
+					local color = 0xFF000000 + rb + g
 
 					-- Gradient debug pattern for UV
 					-- local s = (u * 255) // 1
@@ -687,6 +712,13 @@ return function (width: number, height: number)
 	end
 
 	local function RENDER(): ()
+		-- Transform light direction
+		local light_direction = vector.create(
+			vector.dot(LIGHT_DIR, RIGHT),
+			vector.dot(LIGHT_DIR, UP),
+			vector.dot(LIGHT_DIR, FORWARD)
+		)
+
 		-- Render objects
 		for object_id, object in OBJECTS do
 			local texture_id = object.texture_id
@@ -736,13 +768,16 @@ return function (width: number, height: number)
 				local tri_count = clip_triangle(a, b, c, at, bt, ct)
 				if tri_count == 0 then continue end
 				
-				-- Rasterizing and shading 
+				-- Rasterizing and shading
+				local NdotL = math.max(0, vector.dot(vector.normalize(normal), light_direction))
+				local intensity = AMBIENT + (1 - AMBIENT) * NdotL
+				local shade_factor = intensity * 256 // 1
 
 				if tri_count == 1 then
-					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, shade_factor)
 				elseif tri_count == 2 then
-					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
-					draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td)
+					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, shade_factor)
+					draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, shade_factor)
 				end
 			end
 		end
@@ -793,19 +828,19 @@ return function (width: number, height: number)
 			-- Triangle one:
 			tri_count = clip_triangle(a, c, b, at, ct, bt)
 			if tri_count == 1 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
 			elseif tri_count == 2 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
-				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
+				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, 0)
 			end
 
 			-- Triangle two:
 			tri_count = clip_triangle(a, d, c, at, dt, ct)
 			if tri_count == 1 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
 			elseif tri_count == 2 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td)
-				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
+				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, 0)
 			end
 		end
 	
@@ -832,10 +867,12 @@ return function (width: number, height: number)
 
 		setCameraPosition = SET_CAMERA_POSITION;
 		setCameraRotation = SET_CAMERA_ROTATION;
-		setSkyboxTextures = SET_SKYBOX_TEXTURES;
-		setFieldOfView = SET_FIELD_OF_VIEW;
-		setLightingDirection = SET_LIGHTING_DIRECTION;
 		getCameraBasis = GET_CAMERA_BASIS;
+		setFieldOfView = SET_FIELD_OF_VIEW;
+
+		setLightingAmbient = SET_LIGHTING_AMBIENT;
+		setLightingDirection = SET_LIGHTING_DIRECTION;
+		setSkyboxTextures = SET_SKYBOX_TEXTURES;
 
 		clear = CLEAR;
 		render = RENDER;
