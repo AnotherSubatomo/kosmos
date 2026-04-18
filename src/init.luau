@@ -420,29 +420,29 @@ return function (width: number, height: number)
 		end
 
 		if dy_ac ~= 0 then
-			m_ac = dy_ac == 0 and 0 or (cx - ax) / dy_ac
-			mw_ac = dy_ac == 0 and 0 or (cw - aw) / dy_ac
+			m_ac = (cx - ax) / dy_ac
+			mw_ac = (cw - aw) / dy_ac
 			muw_ac = (cuw - auw) / dy_ac
 			mvw_ac = (cvw - avw) / dy_ac
 		end
 
 		if dy_bc ~= 0 then
-			m_bc = dy_bc == 0 and 0 or (cx - bx) / dy_bc
-			mw_bc = dy_bc == 0 and 0 or (cw - bw) / dy_bc
+			m_bc = (cx - bx) / dy_bc
+			mw_bc = (cw - bw) / dy_bc
 			muw_bc = (cuw - buw) / dy_bc
 			mvw_bc = (cvw - bvw) / dy_bc
 		end
 
 		-- Discretize to get scan bounds
-		local y_start  = ay // 1
-		local y_end    = cy // 1
+		local y_start = ay // 1
+		local y_end   = cy // 1
 
 		-- Ensure correct ordering after discretization
 		if y_start > y_end then y_start, y_end = y_end, y_start end
 
 		-- Clamp to viewport height (prevents OOB buffer errors)
-		y_start  = math.max(0, y_start)
-		y_end    = math.min(HEIGHT_M_1, y_end)
+		y_start = math.max(0, y_start)
+		y_end   = math.min(HEIGHT_M_1, y_end)
 
 		-- Split the triangle!
 		local y_middle = by // 1
@@ -484,7 +484,7 @@ return function (width: number, height: number)
 			end
 
 			-- Clamp horizontal span to screen bounds
-			local x_start = math.max(0, lx // 1)
+			local x_start = math.max(0, (lx + 0.5) // 1)
 			local x_end   = math.min(WIDTH_M_1, rx // 1)
 			local offset  = row_stride + x_start * 4
 
@@ -509,12 +509,12 @@ return function (width: number, height: number)
 				if w > buffer.readf32(Z, offset) then
 					-- Recover perspective-correct UVs
 					local inv_w = 1 / w
-					local u = uw * inv_w
-					local v = vw * inv_w
+					local u = math.clamp(uw * inv_w, 0, 1)
+					local v = math.clamp(vw * inv_w, 0, 1)
 
 					-- Map to texture
-					local s = math.clamp((u * tw) // 1, 0, tw)
-					local t = math.clamp((v * th) // 1, 0, th)
+					local s = (u * tw) // 1
+					local t = (v * th) // 1
 					local texture_color = buffer.readu32(td, t * trs + s * 4)
 
 					-- Blend the texture to the shading
@@ -582,7 +582,7 @@ return function (width: number, height: number)
 			end
 
 			-- Clamp horizontal span to screen bounds
-			local x_start = math.max(0, lx // 1)
+			local x_start = math.max(0, (lx + 0.5) // 1)
 			local x_end   = math.min(WIDTH_M_1, rx // 1)
 			local offset  = row_stride + x_start * 4
 
@@ -607,12 +607,12 @@ return function (width: number, height: number)
 				if w > buffer.readf32(Z, offset) then
 					-- Recover perspective-correct UVs
 					local inv_w = 1 / w
-					local u = uw * inv_w
-					local v = vw * inv_w
+					local u = math.clamp(uw * inv_w, 0, 1)
+					local v = math.clamp(vw * inv_w, 0, 1)
 
 					-- Map to texture
-					local s = math.clamp((u * tw) // 1, 0, tw)
-					local t = math.clamp((v * th) // 1, 0, th)
+					local s = (u * tw) // 1
+					local t = (v * th) // 1
 					local texture_color = buffer.readu32(td, t * trs + s * 4)
 
 					-- Blend the texture to the shading
