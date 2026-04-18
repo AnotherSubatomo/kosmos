@@ -10,6 +10,7 @@ if _G.ROBLOX then
 	local Image = Asset:CreateEditableImageAsync(TextureContent)
 	local ImageSize = Image.Size
 	local ImageData = Image:ReadPixelsBuffer(Vector2.zero, ImageSize)
+	Image:Destroy()
 
 	return {
 		width = ImageSize.x,

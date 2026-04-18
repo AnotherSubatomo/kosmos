@@ -5,7 +5,7 @@
 
 if _G.ROBLOX then
 	local Asset = game:GetService 'AssetService'
-	local TextureContent = Content.fromAssetId(14210706279)
+	local TextureContent = Content.fromAssetId(12408913452)
 
 	local Image = Asset:CreateEditableImageAsync(TextureContent)
 	local ImageSize = Image.Size

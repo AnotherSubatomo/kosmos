@@ -3,29 +3,45 @@
 --!optimize 2
 --!native
 
+-- Renderer constants
 local VIEW_WIDTH = 320
 local VIEW_HEIGHT = 240
 
+-- Require assets
 local kosmos = require("./kosmos")(VIEW_WIDTH, VIEW_HEIGHT)
 local pengar_mesh = require("./demo/meshes/penger")
 local cube_mesh = require("./demo/meshes/cube")
+local cat_texture = require("./demo/textures/cat")
+local cobble_texture = require("./demo/textures/cobble")
 local diamond_plate_texture = require("./demo/textures/diamond_plate")
 local skybox_texture = require("./demo/textures/skybox")
 
+local heightmap_maker = require("./demo/heightmap")
+local heightmap_mesh = heightmap_maker(25, 1, 200, 20, 2)
+
+-- Register assets
+local cat = kosmos.texture(cat_texture)
+local cobble = kosmos.texture(cobble_texture)
 local diamond_plate = kosmos.texture(diamond_plate_texture)
 local skybox = kosmos.texture(skybox_texture)
 local pengar = kosmos.mesh(pengar_mesh)
 local cube = kosmos.mesh(cube_mesh)
+local heightmap = kosmos.mesh(heightmap_mesh)
 
+-- Instantiate objects & set-up the scene
 local obj1 = kosmos.object(pengar, diamond_plate)
 kosmos.setObjectPosition(obj1, vector.create(0.625, 0, 1))
 kosmos.setObjectRotation(obj1, math.pi, 0, 0)
 
-local obj2 = kosmos.object(cube, diamond_plate)
+local obj2 = kosmos.object(cube, cat)
 kosmos.setObjectPosition(obj2, vector.create(-0.625, 0, 1))
+
+local obj3 = kosmos.object(heightmap, cobble)
+kosmos.setObjectPosition(obj3, vector.create(10, -1, -10))
 
 kosmos.setSkyboxTextures(skybox, skybox, skybox, skybox, skybox, skybox)
 
+-- Prepare renderer runtime
 local IMAGE = kosmos.getImageBuffer()
 
 local SPEED = 4
