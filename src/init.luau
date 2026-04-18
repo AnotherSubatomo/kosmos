@@ -771,7 +771,7 @@ return function (width: number, height: number)
 				-- Rasterizing and shading
 				local NdotL = math.max(0, vector.dot(vector.normalize(normal), light_direction))
 				local intensity = AMBIENT + (1 - AMBIENT) * NdotL
-				local shade_factor = intensity * 256 // 1
+				local shade_factor = intensity * 255 // 1
 
 				if tri_count == 1 then
 					draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, shade_factor)
@@ -828,19 +828,19 @@ return function (width: number, height: number)
 			-- Triangle one:
 			tri_count = clip_triangle(a, c, b, at, ct, bt)
 			if tri_count == 1 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 255)
 			elseif tri_count == 2 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
-				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, 0)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 255)
+				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, 255)
 			end
 
 			-- Triangle two:
 			tri_count = clip_triangle(a, d, c, at, dt, ct)
 			if tri_count == 1 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 255)
 			elseif tri_count == 2 then
-				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 0)
-				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, 0)
+				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 255)
+				draw_triangle(CV4, CV5, CV6, CT4, CT5, CT6, tw, th, trs, td, 255)
 			end
 		end
 	
