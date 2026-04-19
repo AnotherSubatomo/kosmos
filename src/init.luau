@@ -531,10 +531,6 @@ return function (width: number, height: number)
 					-- local t = (v * 255) // 1
 					-- local color = texture_id * 0x10000 + t * 0x100 + s * 0x1
 
-					-- Checkerboard debug pattern for UV
-					-- local checker = (((u * 10) // 1 + (v * 10) // 1) % 2) * 255
-					-- local color = 0xff000000 + checker * 0x10101
-
 					buffer.writeu32(IMAGE, offset, color)
 					buffer.writef32(Z, offset, w)
 				end
@@ -628,10 +624,6 @@ return function (width: number, height: number)
 					-- local s = (u * 255) // 1
 					-- local t = (v * 255) // 1
 					-- local color = texture_id * 0x10000 + t * 0x100 + s * 0x1
-
-					-- Checkerboard debug pattern for UV
-					-- local checker = (((u * 10) // 1 + (v * 10) // 1) % 2) * 255
-					-- local color = 0xff000000 + checker * 0x10101
 
 					buffer.writeu32(IMAGE, offset, color)
 					buffer.writef32(Z, offset, w)
