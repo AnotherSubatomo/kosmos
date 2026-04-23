@@ -9,15 +9,17 @@ local VIEW_HEIGHT = 240
 
 -- Require assets
 local kosmos = require("./kosmos")(VIEW_WIDTH, VIEW_HEIGHT)
-local pengar_mesh = require("./demo/meshes/penger")
-local cube_mesh = require("./demo/meshes/cube")
+local obj_parser = require("./tool/obj_parser")
+local heightmap_maker = require("./demo/heightmap")
+
+local pengar_mesh = obj_parser(script.meshes["penger.obj"].Value)
+local cube_mesh = obj_parser(script.meshes["cube.obj"].Value)
+local heightmap_mesh = heightmap_maker(25, 1, 200, 20, 2)
+
 local cat_texture = require("./demo/textures/cat")
 local cobble_texture = require("./demo/textures/cobble")
 local diamond_plate_texture = require("./demo/textures/diamond_plate")
 local skybox_texture = require("./demo/textures/skybox")
-
-local heightmap_maker = require("./demo/heightmap")
-local heightmap_mesh = heightmap_maker(25, 1, 200, 20, 2)
 
 -- Register assets
 local cat = kosmos.texture(cat_texture)

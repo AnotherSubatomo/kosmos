@@ -13,15 +13,17 @@ local tclear = table.clear
 local make_vec = vector.create
 local iter_codes = utf8.codes ''
 
+-- Tries to return a number as much as possible.
 local function number(str: string?): (number)
 	return tonumber(str) or NAN
 end
 
+-- Returns 0 (for "no index") or a non-zero, positive integer as an index.
 local function parse_index(i: string?, len: number): (number)
 	local idx = tonumber(i)
-	if not idx then return NAN end
+	if not idx then return 0 end
 	if idx < 0 then idx = len + idx + 1 end
-	if idx < 1 or idx > len then return NAN end
+	if idx < 1 or idx > len then return 0 end
 	return idx
 end
 
@@ -34,6 +36,7 @@ export type LuauOBJ = {
 	faces: vectors
 }
 
+-- OBJ parser entry point.
 local function load_OBJ(source: string): (LuauOBJ)
 	local total_faces = 0
 	local total_vertices = 0

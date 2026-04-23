@@ -5,8 +5,9 @@
 		"ReplicatedFirst": {
 			"kosmos-renderer": {
 				"$path": "renderer/Roblox",
+				"kosmos": { "$path": "src" },
 				"demo": { "$path": "demo" },
-				"kosmos": { "$path": "src" }
+				"tool": { "$path": "tool" }
 			}
 		}
 	}
