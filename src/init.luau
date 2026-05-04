@@ -149,7 +149,7 @@ return function (width: number, height: number)
 	local LIGHT_DIR = vector.normalize(vector.one)
 
 	local SKYBOX_TEXTURES = table.clone(DEFAULT_SKYBOX_TEXTURES)
-	local SKYBOX_TRANSFORMS = table.create(24)
+	local SKYBOX_TRANSFORMS = table.create(24) :: {vector}
 
 	local CAMERA_DIRTY = false
 	
@@ -286,8 +286,8 @@ return function (width: number, height: number)
 		end
 	end
 
-	local CV1, CV2, CV3, CV4, CV5, CV6
-	local CT1, CT2, CT3, CT4, CT5, CT6
+	local CV1: vector, CV2: vector, CV3: vector, CV4: vector, CV5: vector, CV6: vector
+	local CT1: vector, CT2: vector, CT3: vector, CT4: vector, CT5: vector, CT6: vector
 
 	-- Clips triangles near the camera plane into y-monotone triangle/s. (or none, where the triangle gets skipped)
 	local function clip_triangle(a: vector, b: vector, c: vector, at: vector, bt: vector, ct: vector): (number)
@@ -640,11 +640,11 @@ return function (width: number, height: number)
 		end
 	end
 
-	local MESHES: {mesh} = table.create(4)
-	local TEXTURES: {texture} = table.create(4)
-	local OBJECTS: {object} = table.create(16)
-	local OBJECTS_CHANGED: {boolean} = table.create(16)
-	local OBJECT_TRANSFORMS: {{vector}} = table.create(16)
+	local MESHES = table.create(4) :: {mesh}
+	local TEXTURES = table.create(4) :: {texture}
+	local OBJECTS = table.create(16) :: {object}
+	local OBJECTS_CHANGED = table.create(16) :: {boolean}
+	local OBJECT_TRANSFORMS = table.create(16) :: {{vector}}
 
 	local function MESH(mesh: mesh): (number)
 		table.insert(MESHES, mesh)
@@ -677,7 +677,7 @@ return function (width: number, height: number)
 
 		-- Create draw entry *once*
 		local mesh = MESHES[mesh_id]
-		OBJECT_TRANSFORMS[object_id] = table.create(#mesh.vertices)
+		OBJECT_TRANSFORMS[object_id] = table.create(#mesh.vertices) :: {vector}
 
 		return object_id
 	end

@@ -13,6 +13,11 @@ local tclear = table.clear
 local make_vec = vector.create
 local iter_codes = utf8.codes ''
 
+-- Returns a number that is the binary concatenation of three u16 numbers that represent indices.
+local function make_index_tuple(ai: number, bi: number, ci: number): (number)
+	return ai + bi * 0x10000 + ci * 0x100000000
+end
+
 -- Tries to return a number as much as possible.
 local function number(str: string?): (number)
 	return tonumber(str) or NAN
@@ -61,14 +66,21 @@ local function load_OBJ(source: string): (LuauOBJ)
 		curr_offset, curr_code = next_offset, next_code
 	end
 
-	local faces = talloc(total_faces)
-	local vertices = talloc(total_vertices)
-	local uvs = talloc(total_vertices)
-	local normals = talloc(total_vertices)
+	-- This limit exist because indices for `make_index_tuple()` are expected
+	-- to be of size `u16`; but beyond that, I also think that vertex counts
+	-- greater than 65535 is just too much to ask for.
+	if total_vertices > 0xFFFF then
+		error "OBJ file's vertice count is greater than what is tolerable for the decoder."
+	end
 
-	local vertex_list = talloc(total_vertices)
-	local uv_list = talloc(total_uvs_listed)
-	local normal_list = talloc(total_normals_listed)
+	local faces = talloc(total_faces) :: vectors
+	local vertices = talloc(total_vertices) :: vectors
+	local uvs = talloc(total_vertices) :: vectors
+	local normals = talloc(total_vertices) :: vectors
+
+	local vertex_list = talloc(total_vertices) :: vectors
+	local uv_list = talloc(total_uvs_listed) :: vectors
+	local normal_list = talloc(total_normals_listed) :: vectors
 
 	local n_faces = 0
 	local n_unique_vertices = 0
@@ -78,10 +90,10 @@ local function load_OBJ(source: string): (LuauOBJ)
 	local n_normals = 0
 
 	--> Yes, the vector datatype actually has stable hashing semantics for all correct Luau runtimes!
-	local point_lookup: {[vector]: number} = {}
-	local index_tuples = talloc(3)
+	local point_lookup: {[number]: number} = {}
+	local index_tuples = talloc(3) :: {number}
 	
-	local function get_vertex_index(index_tuple: vector): (number)
+	local function get_vertex_index(index_tuple: number): (number)
 		local existing_idx = point_lookup[index_tuple]
 		if existing_idx then return existing_idx end
 
@@ -89,9 +101,9 @@ local function load_OBJ(source: string): (LuauOBJ)
 		local idx = n_unique_vertices
 		point_lookup[index_tuple] = idx
 
-		vertices[idx] = vertex_list[index_tuple.x]
-		uvs[idx] = uv_list[index_tuple.y]
-		normals[idx] = normal_list[index_tuple.z]
+		vertices[idx] = vertex_list[bit32.band(index_tuple, 0xFFFF)]
+		uvs[idx] = uv_list[bit32.band(index_tuple / 0x10000, 0xFFFF)]
+		normals[idx] = normal_list[bit32.band(index_tuple / 0x100000000, 0xFFFF)]
 
 		return idx
 	end
@@ -123,7 +135,7 @@ local function load_OBJ(source: string): (LuauOBJ)
 				-- formats: v; v/vt; v//vn; v/vt/vn
 				local a, b, c = match(index_tuple, "([^/]*)/?([^/]*)/?([^/]*)")
 				n_index_tuples += 1
-				index_tuples[n_index_tuples] = make_vec(
+				index_tuples[n_index_tuples] = make_index_tuple(
 					parse_index(a, n_vertices),
 					parse_index(b, n_uvs),
 					parse_index(c, n_normals)

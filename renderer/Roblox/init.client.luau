@@ -90,7 +90,7 @@ local function main()
 	local ImageContent = Content.fromObject(Image)
 
 	Run.PreRender:Connect(function(delta: number)
-		local mouse_delta = UserInput:GetMouseDelta()
+		local mouse_delta = (UserInput:GetMouseDelta() :: any) :: vector
 		local move_direction = GetMoveDirection(UserInput:GetKeysPressed())
 		input(mouse_delta, move_direction)
 

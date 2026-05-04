@@ -5,6 +5,8 @@
 --!optimize 2
 --!native
 
+local vector_array = table.create :: (number) -> ({vector})
+
 return function (
 	point_per_dim: number, spacing: number,
 	resolution: number, frequency: number, amplitude: number
@@ -12,9 +14,9 @@ return function (
 	local face_per_dim = point_per_dim - 1
 	local total_vertices = point_per_dim * point_per_dim
 
-	local uvs = table.create(total_vertices)
-	local vertices = table.create(total_vertices)
-	local faces = table.create(face_per_dim * face_per_dim * 2)
+	local uvs = vector_array(total_vertices)
+	local vertices = vector_array(total_vertices)
+	local faces = vector_array(face_per_dim * face_per_dim * 2)
 
 	local n_vertices = 0
 	local n_faces = 0
