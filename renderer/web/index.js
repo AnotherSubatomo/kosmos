@@ -2,14 +2,14 @@ import { LuauState } from 'https://cdn.jsdelivr.net/gh/xNasuni/luau-web@main/dis
 
 // Quick-n-dirty fake require function
 async function require(path) {
-	path = path.replace("../", "").replace("./", "")
-
-	if (path == "kosmos") {
+	if (path == "./kosmos") {
 		path = "../../src/init.luau"
-	} else if (path == "demo") {
+	} else if (path == "../demo") {
 		path = "../../demo/init.luau"
+	} else if (path == "./default") {
+		path = "../../demo/textures/default.luau"
 	} else {
-		path = "../../" + path + ".luau"
+		path = path.replace("./", "../../") + ".luau"
 	}
 
 	const source = await fetch(path).then(r => r.text())

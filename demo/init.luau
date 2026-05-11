@@ -82,7 +82,7 @@ local function FRAME(delta: number): (buffer)
 	kosmos.clear()
 	kosmos.render()
 	local end_tick = os.clock()
-	budget_consumed_percentage = (end_tick - start_tick) * 6000
+	budget_consumed_percentage = ((end_tick - start_tick) / delta) * 100
 
 	return IMAGE
 end
