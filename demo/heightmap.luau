@@ -8,7 +8,7 @@
 local vector_array = table.create :: (number) -> ({vector})
 
 return function (
-	point_per_dim: number, spacing: number,
+	point_per_dim: number, spacing: number, tiling: number,
 	resolution: number, frequency: number, amplitude: number
 )
 	local face_per_dim = point_per_dim - 1
@@ -31,7 +31,7 @@ return function (
 
 			n_vertices += 1
 			vertices[n_vertices] = vertex
-			uvs[n_vertices] = vector.create(x / face_per_dim, z / face_per_dim)
+			uvs[n_vertices] = vector.create(x * tiling, z * tiling)
 
 			if x == 0 or z == 0 then continue end
 

@@ -509,8 +509,8 @@ return function (width: number, height: number)
 				if w > buffer.readf32(Z, offset) then
 					-- Recover perspective-correct UVs
 					local inv_w = 1 / w
-					local u = math.clamp(uw * inv_w, 0, 1)
-					local v = math.clamp(vw * inv_w, 0, 1)
+					local u = (uw * inv_w) % 1
+					local v = (vw * inv_w) % 1
 
 					-- Map to texture
 					local s = (u * tw) // 1
@@ -603,8 +603,8 @@ return function (width: number, height: number)
 				if w > buffer.readf32(Z, offset) then
 					-- Recover perspective-correct UVs
 					local inv_w = 1 / w
-					local u = math.clamp(uw * inv_w, 0, 1)
-					local v = math.clamp(vw * inv_w, 0, 1)
+					local u = (uw * inv_w) % 1
+					local v = (vw * inv_w) % 1
 
 					-- Map to texture
 					local s = (u * tw) // 1

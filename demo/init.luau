@@ -14,7 +14,7 @@ local heightmap_maker = require("./demo/heightmap")
 
 local pengar_mesh = obj_parser(script.meshes["penger.obj"].Value)
 local cube_mesh = obj_parser(script.meshes["cube.obj"].Value)
-local heightmap_mesh = heightmap_maker(25, 1, 200, 20, 2)
+local heightmap_mesh = heightmap_maker(25, 1, 0.25, 200, 20, 2)
 
 local cat_texture = require("./demo/textures/cat")
 local cobble_texture = require("./demo/textures/cobble")
