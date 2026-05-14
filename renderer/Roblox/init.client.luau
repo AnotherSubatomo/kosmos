@@ -83,7 +83,7 @@ local function main()
 	Viewport.ResampleMode = Enum.ResamplerMode.Pixelated
 
 	local AspectRatio = New 'UIAspectRatioConstraint'
-	AspectRatio.AspectRatio = view_size.x / view_size.y
+	AspectRatio.AspectRatio = view_size.X / view_size.Y
 	AspectRatio.Parent = Viewport
 
 	local Image = Asset:CreateEditableImage { Size = view_size }

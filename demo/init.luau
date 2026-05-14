@@ -21,7 +21,7 @@ local cat_texture = require("./demo/textures/cat")
 local cobble_texture = require("./demo/textures/cobble")
 local diamond_plate_texture = require("./demo/textures/diamond_plate")
 
-local skybox_resolution = 256
+local skybox_resolution = 128
 local skybox_front_texture = skybox_maker(skybox_resolution, vector.create(0, 0, 1))
 local skybox_back_texture = skybox_maker(skybox_resolution, vector.create(0, 0, -1))
 local skybox_left_texture = skybox_maker(skybox_resolution, vector.create(1, 0, 0))
@@ -47,14 +47,14 @@ local skybox_bottom = kosmos.texture(skybox_bottom_texture)
 
 -- Instantiate objects & set-up the scene
 local obj1 = kosmos.object(pengar, diamond_plate)
-kosmos.setObjectPosition(obj1, vector.create(0.625, 0, 1))
+kosmos.setObjectPosition(obj1, vector.create(-0.625, 0, 1))
 kosmos.setObjectRotation(obj1, math.pi, 0, 0)
 
 local obj2 = kosmos.object(cube, cat)
-kosmos.setObjectPosition(obj2, vector.create(-0.625, 0, 1))
+kosmos.setObjectPosition(obj2, vector.create(0.625, 0, 1))
 
 local obj3 = kosmos.object(heightmap, cobble)
-kosmos.setObjectPosition(obj3, vector.create(10, -1, -10))
+kosmos.setObjectPosition(obj3, vector.create(-10, -1, -10))
 
 kosmos.setSkyboxTextures(
 	skybox_front, skybox_back,
@@ -79,7 +79,7 @@ local obj_rot = 0
 local budget_consumed_percentage = 0
 
 local function FRAME(delta: number): (buffer)
-	camera_yaw -= mouse_delta.x * SENSITIVITY * delta
+	camera_yaw += mouse_delta.x * SENSITIVITY * delta
 	camera_pitch += mouse_delta.y * SENSITIVITY * delta
 	kosmos.setCameraRotation(camera_yaw, camera_pitch)
 

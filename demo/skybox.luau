@@ -11,7 +11,7 @@ export type texture = {
 	data: buffer
 }
 
-local WORLD_RIGHT = vector.create(-1, 0, 0)
+local WORLD_RIGHT = vector.create(1, 0, 0)
 local WORLD_UP = vector.create(0, 1, 0)
 
 local SUN_DIR = vector.normalize(vector.create(0.6, 0.35, 0.7))
@@ -147,8 +147,8 @@ local function generate_face(resolution: number, forward: vector): (texture)
 		up_reference = WORLD_RIGHT
 	end
 
-	local right = vector.normalize(vector.cross(forward, up_reference))
-	local up = vector.normalize(vector.cross(right, forward))
+	local right = vector.normalize(vector.cross(up_reference, forward))
+	local up = vector.normalize(vector.cross(forward, right))
 
 	for y = 0, offset do
 		-- Construct signed UV

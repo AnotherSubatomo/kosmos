@@ -9,6 +9,8 @@
 	SUPPLEMENTARY INFORMATION ABOUT THE IMPLEMENTATION
 	==================================================
 
+	# Coordinate system: right-handed, Y-up, +Z-forward
+
 	# Vertex winding order: counter-clockwise = front-facing
 
 	# Currently, the rendering pipeline looks like this:
@@ -61,28 +63,14 @@ export type object = {
 	forward: vector,
 }
 
+local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
+
 local NEAR = 0.01
 local NO_TEXTURE_ID = 0xffff
 
-local DEFAULT_RIGHT = vector.create(-1, 0, 0)
-local DEFAULT_UP = vector.create(0, 1, 0)
-local DEFAULT_FORWARD = vector.create(0, 0, 1)
-
-local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
-
-local SBv1 = vector.create(2048, 2048, 2048)
-local SBv2 = vector.create(-2048, 2048, 2048)
-local SBv3 = vector.create(-2048, -2048, 2048)
-local SBv4 = vector.create(2048, -2048, 2048)
-local SBv5 = vector.create(2048, 2048, -2048)
-local SBv6 = vector.create(-2048, 2048, -2048)
-local SBv7 = vector.create(-2048, -2048, -2048)
-local SBv8 = vector.create(2048, -2048, -2048)
-
-local SBt11 = vector.create(1, 1)
-local SBt01 = vector.create(0, 1)
-local SBt00 = vector.create(0, 0)
-local SBt10 = vector.create(1, 0)
+local GLOBAL_RIGHT = vector.create(1, 0, 0)
+local GLOBAL_UP = vector.create(0, 1, 0)
+local GLOBAL_FORWARD = vector.create(0, 0, 1)
 
 local DEFAULT_SKYBOX_TEXTURES = {
 	NO_TEXTURE_ID,
@@ -93,22 +81,24 @@ local DEFAULT_SKYBOX_TEXTURES = {
 	NO_TEXTURE_ID,
 }
 
-local SKYBOX_VERTICES = {
-	SBv1, SBv2, SBv3, SBv4, -- Front
-	SBv5, SBv6, SBv7, SBv8, -- Back
-	SBv2, SBv6, SBv7, SBv3, -- Left
-	SBv1, SBv5, SBv8, SBv4, -- Right
-	SBv5, SBv6, SBv2, SBv1, -- Top
-	SBv8, SBv7, SBv3, SBv4, -- Bottom
-}
+local SKYBOX_RADIUS = 2048
 
-local SKYBOX_UVS = {
-	SBt11, SBt01, SBt00, SBt10, -- Front
-	SBt01, SBt11, SBt10, SBt00, -- Back
-	SBt11, SBt01, SBt00, SBt10, -- Left
-	SBt01, SBt11, SBt10, SBt00, -- Right
-	SBt01, SBt00, SBt10, SBt11, -- Top
-	SBt11, SBt01, SBt00, SBt10, -- Bottom
+local SV_PPN = vector.create(SKYBOX_RADIUS, SKYBOX_RADIUS, -SKYBOX_RADIUS)
+local SV_NPN = vector.create(-SKYBOX_RADIUS, SKYBOX_RADIUS, -SKYBOX_RADIUS)
+local SV_NNN = vector.create(-SKYBOX_RADIUS, -SKYBOX_RADIUS, -SKYBOX_RADIUS)
+local SV_PNN = vector.create(SKYBOX_RADIUS, -SKYBOX_RADIUS, -SKYBOX_RADIUS)
+local SV_NPP = vector.create(-SKYBOX_RADIUS, SKYBOX_RADIUS, SKYBOX_RADIUS)
+local SV_PPP = vector.create(SKYBOX_RADIUS, SKYBOX_RADIUS, SKYBOX_RADIUS)
+local SV_PNP = vector.create(SKYBOX_RADIUS, -SKYBOX_RADIUS, SKYBOX_RADIUS)
+local SV_NNP = vector.create(-SKYBOX_RADIUS, -SKYBOX_RADIUS, SKYBOX_RADIUS)
+
+local SKYBOX_VERTICES = {
+	SV_PPN, SV_NPN, SV_NNN, SV_PNN, -- Front
+	SV_NPP,	SV_PPP,	SV_PNP,	SV_NNP, -- Back
+	SV_PPP,	SV_PPN,	SV_PNN,	SV_PNP, -- Left
+	SV_NPN,	SV_NPP,	SV_NNP,	SV_NNN, -- Right
+	SV_PPN,	SV_PPP,	SV_NPP,	SV_NPN, -- Top
+	SV_PNP,	SV_PNN,	SV_NNN,	SV_NNP, -- Bottom
 }
 
 local SKYBOX_FACES = {
@@ -163,9 +153,9 @@ return function (width: number, height: number)
 	local FOV = 90
 
 	-- Derived camera settings
-	local RIGHT = DEFAULT_RIGHT
-	local UP = DEFAULT_UP
-	local FORWARD = DEFAULT_FORWARD
+	local RIGHT = GLOBAL_RIGHT
+	local UP = GLOBAL_UP
+	local FORWARD = GLOBAL_FORWARD
 	local SCALE = INV_ASPECT_RATIO
 
 	-- Recomputes the orthogonal bases according to the euler rotations given.
@@ -177,10 +167,10 @@ return function (width: number, height: number)
 
 		local forward = vector.create(sy * cp, -sp, cy * cp)
 
-		local right = vector.normalize(vector.cross(forward, WORLD_UP))
+		local right = vector.normalize(vector.cross(WORLD_UP, forward))
 
 		-- Recompute up to ensure orthogonality
-		local up = vector.normalize(vector.cross(right, forward))
+		local up = vector.normalize(vector.cross(forward, right))
 
 		-- Apply roll (rotate right/up around forward)
 		if roll ~= 0 then
@@ -670,9 +660,9 @@ return function (width: number, height: number)
 			mesh_id = mesh_id,
 			texture_id = texture_id or NO_TEXTURE_ID,
 			position = vector.zero,
-			right = DEFAULT_RIGHT,
-			up = DEFAULT_UP,
-			forward = DEFAULT_FORWARD,
+			right = GLOBAL_RIGHT,
+			up = GLOBAL_UP,
+			forward = GLOBAL_FORWARD,
 		}
 
 		OBJECTS[object_id] = object
@@ -820,10 +810,10 @@ return function (width: number, height: number)
 			local c = SKYBOX_TRANSFORMS[ci]
 			local d = SKYBOX_TRANSFORMS[di]
 
-			local at = SKYBOX_UVS[ai]
-			local bt = SKYBOX_UVS[bi]
-			local ct = SKYBOX_UVS[ci]
-			local dt = SKYBOX_UVS[di]
+			local at = vector.create(1, 1)
+			local bt = vector.create(0, 1)
+			local ct = vector.create(0, 0)
+			local dt = vector.create(1, 0)
 
 			local tri_count = 0
 
