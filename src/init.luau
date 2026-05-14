@@ -92,22 +92,25 @@ local DEFAULT_SKYBOX_TEXTURES = {
 	NO_TEXTURE_ID,
 	NO_TEXTURE_ID,
 }
+
 local SKYBOX_VERTICES = {
 	SBv1, SBv2, SBv3, SBv4, -- Front
 	SBv5, SBv6, SBv7, SBv8, -- Back
 	SBv2, SBv6, SBv7, SBv3, -- Left
 	SBv1, SBv5, SBv8, SBv4, -- Right
-	SBv1, SBv2, SBv6, SBv5, -- Top
-	SBv4, SBv3, SBv7, SBv8, -- Bottom
+	SBv5, SBv6, SBv2, SBv1, -- Top
+	SBv8, SBv7, SBv3, SBv4, -- Bottom
 }
+
 local SKYBOX_UVS = {
 	SBt11, SBt01, SBt00, SBt10, -- Front
-	SBt11, SBt01, SBt00, SBt10, -- Back
+	SBt01, SBt11, SBt10, SBt00, -- Back
 	SBt11, SBt01, SBt00, SBt10, -- Left
-	SBt11, SBt01, SBt00, SBt10, -- Right
-	SBt11, SBt01, SBt00, SBt10, -- Top
+	SBt01, SBt11, SBt10, SBt00, -- Right
+	SBt01, SBt00, SBt10, SBt11, -- Top
 	SBt11, SBt01, SBt00, SBt10, -- Bottom
 }
+
 local SKYBOX_FACES = {
 	{1, 2, 3, 4}, -- Front
 	{5, 6, 7, 8}, -- Back
