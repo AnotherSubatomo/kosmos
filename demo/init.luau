@@ -21,13 +21,14 @@ local cat_texture = require("./demo/textures/cat")
 local cobble_texture = require("./demo/textures/cobble")
 local diamond_plate_texture = require("./demo/textures/diamond_plate")
 
-local skybox_resolution = 128
-local skybox_front_texture = skybox_maker.generate_face(skybox_resolution, vector.create(0, 0, 1))
-local skybox_back_texture = skybox_maker.generate_face(skybox_resolution, vector.create(0, 0, -1))
-local skybox_left_texture = skybox_maker.generate_face(skybox_resolution, vector.create(1, 0, 0))
-local skybox_right_texture = skybox_maker.generate_face(skybox_resolution, vector.create(-1, 0, 0))
-local skybox_top_texture = skybox_maker.generate_face(skybox_resolution, vector.create(0, 1, 0))
-local skybox_bottom_texture = skybox_maker.generate_face(skybox_resolution, vector.create(0, -1, 0))
+local skybox_resolution_low = 128
+local skybox_resolution_high = 192
+local skybox_front_texture = skybox_maker.generate_face(skybox_resolution_high, vector.create(0, 0, 1))
+local skybox_back_texture = skybox_maker.generate_face(skybox_resolution_high, vector.create(0, 0, -1))
+local skybox_left_texture = skybox_maker.generate_face(skybox_resolution_high, vector.create(1, 0, 0))
+local skybox_right_texture = skybox_maker.generate_face(skybox_resolution_high, vector.create(-1, 0, 0))
+local skybox_top_texture = skybox_maker.generate_face(skybox_resolution_low, vector.create(0, 1, 0))
+local skybox_bottom_texture = skybox_maker.generate_face(skybox_resolution_low, vector.create(0, -1, 0))
 
 -- Register assets
 local pengar = kosmos.mesh(pengar_mesh)

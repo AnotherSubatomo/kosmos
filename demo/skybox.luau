@@ -12,12 +12,15 @@ export type texture = {
 	data: buffer
 }
 
+-- Coordinate system
 local WORLD_RIGHT = vector.create(1, 0, 0)
 local WORLD_UP = vector.create(0, 1, 0)
 
+-- Sun
 local SUN_DIRECTION = vector.normalize(vector.create(0.6, 0.35, 0.7))
 local SUN_COLOR = vector.create(1.0, 0.95, 0.85)
 
+-- Sky
 local SKY_ZENITH = vector.create(0.25, 0.45, 1.0)
 local SKY_HORIZON = vector.create(0.85, 0.9, 1.0)
 local ZENITH_DISTANCE = SKY_ZENITH - SKY_HORIZON
@@ -37,11 +40,11 @@ local CLOUD_WARP_STRENGTH = 2.0
 local CLOUD_HORIZON_FADE_START = 0.02
 local CLOUD_HORIZON_FADE_END = 0.08
 
--- Erosion
+-- Cloud erosion
 local CLOUD_EROSION = 0.25
 local CLOUD_EROSION_SCALE = 8
 
--- Lighting
+-- Clouds lighting
 local CLOUD_AMBIENT_LIGHT = 0.55
 local CLOUD_DIRECT_LIGHT = 0.45
 local CLOUD_SUN_TINT_STRENGTH = 0.5
