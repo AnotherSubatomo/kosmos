@@ -8,13 +8,13 @@ local VIEW_WIDTH = 320
 local VIEW_HEIGHT = 240
 
 -- Require assets
-local kosmos = require("./kosmos")(VIEW_WIDTH, VIEW_HEIGHT)
+local kosmos = require("./src")(VIEW_WIDTH, VIEW_HEIGHT)
 local obj_parser = require("./tool/obj_parser")
 local heightmap_maker = require("./demo/heightmap")
 local skybox_maker = require("./demo/skybox")
 
-local pengar_mesh = obj_parser(script.meshes["penger.obj"].Value)
-local cube_mesh = obj_parser(script.meshes["cube.obj"].Value)
+local pengar_mesh = obj_parser(require("./demo/meshes/penger"))
+local cube_mesh = obj_parser(require("./demo/meshes/cube"))
 local heightmap_mesh = heightmap_maker(25, 1, 0.25, 200, 20, 2)
 
 local cat_texture = require("./demo/textures/cat")

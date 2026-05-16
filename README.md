@@ -5,7 +5,7 @@
 
 ---
 
-kosmos is a minimal, single-file, software rasterizer written in pure Luau, that doesn't  depend on any specific runtime (platform-agnostic). Renderers for both the [web](/renderer/web/) and [Roblox](/renderer/Roblox/) are available, though more often than not, the web renderer is broken due to how finicky the web VM implementation is.
+kosmos is a minimal, single-file, software rasterizer written in pure Luau, that doesn't  depend on any specific runtime (platform-agnostic). Renderers for both the [web](/renderer/web/) and [Roblox](/renderer/Roblox/) are available.
 
 See it in action with the YouTube video below:
 

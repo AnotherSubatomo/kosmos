@@ -1,27 +1,82 @@
 
+-- kosmos renderer, for the web
+-- * can be ran by running `lute renderer/web`
+-- * works by serving the image data through a websocket,
+--   NOT by running Luau on the web through a VM nor
+--   compiling it to WASM (though, that would be lovely)
+
 --!strict
 --!optimize 2
 --!native
 
-local program = require('../demo')
+type JS_InputData = {
+	dx: number,
+	dy: number,
+	right: number,
+	up: number,
+	forward: number,
+}
 
--- All this ugly, hacky, bullshiit is done to circumvent the data proxy
--- bullshit LuauWeb does. I absolutely cannot wrap my head around why this
--- is the case; I do not get JS safety, and frankly, the web is a fucking joke.
--- No hate to the LuauWeb author, they're probably just trying their best to
--- make it secure, but oh my lord is this such a pain in the ass. I have spent
--- an ungodly amount of time trying to figure this bullshit out so I feel like
--- I have every right to write this block of angry text.
+local json = require("@std/json")
+local task = require("@std/task")
+local net = require("@lute/net")
+local fs = require("@std/fs")
 
+local program = require("../demo")
 local frame = program.frame
 local input = program.input
 
-local function luau_web_compatible_frame(delta: number): (string)
-	return buffer.tostring(frame(delta))
+local FPS_DELTA = 1/60
+local SITE_PORT = 8000
+local WEBSOCKET_PORT = 8080
+
+local function on_server_ws_open(ws: net.ServerWebSocket): ()
+	print("[Server]: Websocket opened!")
+	-- Initially send the set-up data
+	ws:send(json.serialize({
+		width = program.width,
+		height = program.height,
+	}))
+
+	task.wait(1)
+
+	while true do
+		task.wait(FPS_DELTA)
+		local image = frame(FPS_DELTA)
+		ws:send(image)
+	end
 end
 
-local function luau_web_compatible_input(dx: number, dy: number, right: number, up: number, forward: number): ()
-	input(vector.create(dx, dy), vector.create(right, up, forward))
+local function on_server_ws_message(ws: net.ServerWebSocket, message: string | buffer): ()
+	if type(message) == "buffer" then return end
+	local input_data = json.deserialize(message) :: JS_InputData
+
+	input(
+		vector.create(input_data.dx, input_data.dy),
+		vector.create(input_data.right, input_data.up, input_data.forward)
+	)
 end
 
-return program.width, program.height, luau_web_compatible_frame, luau_web_compatible_input
+local function on_server_ws_close(ws: net.ServerWebSocket, code: number, message: string): ()
+	print("[Server]: Websocket closed!")
+end
+
+local function handler(request: net.ReceivedRequest, server: net.Server): (net.ServerResponse)
+	return fs.readFileToString('./renderer/web/index.html')
+end
+
+-- Start the site server
+net.server.serve({
+	port = SITE_PORT,
+	handler = handler,
+})
+
+-- Start the server websocket
+net.server.serve({
+	port = WEBSOCKET_PORT,
+	websocket = {
+		open = on_server_ws_open,
+		message = on_server_ws_message,
+		close = on_server_ws_close,
+	}
+})

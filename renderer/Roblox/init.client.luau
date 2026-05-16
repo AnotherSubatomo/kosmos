@@ -1,4 +1,8 @@
 
+-- kosmos renderer, for Roblox
+-- * ran by serving the default Rojo project to the
+--   Roblox place of your choice, and then running Studio.
+
 --!strict
 --!optimize 2
 --!native

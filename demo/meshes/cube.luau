@@ -1,4 +1,4 @@
-# Hand-crafted cube object
+return [[# Hand-crafted cube object
 o cube
 v 0.25 0.25 0.25
 v -0.25 0.25 0.25
@@ -23,4 +23,4 @@ f 1/1 4/4 8/3
 f 1/1 6/3 2/2
 f 1/1 5/4 6/3
 f 4/1 3/2 7/3
-f 4/1 7/3 8/4
+f 4/1 7/3 8/4]]
