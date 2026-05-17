@@ -31,19 +31,9 @@ local FPS_DELTA = 1/60
 local SITE_PORT = 8000
 local WEBSOCKET_PORT = 8080
 
-local function on_server_ws_open(ws: net.ServerWebSocket): ()
-	print("[Server]: Websocket opened!")
+local CURRENT_PROGRAM_RUNTIME: thread?
 
-	-- Initially send the set-up data...
-	ws:send( json.serialize {
-		case = "init",
-		width = program.width,
-		height = program.height,
-	})
-
-	task.wait(1)
-
-	-- ...then, continuously feed the image data.
+local function main_loop(ws: net.ServerWebSocket): ()
 	while true do
 		task.wait(FPS_DELTA)
 
@@ -58,6 +48,22 @@ local function on_server_ws_open(ws: net.ServerWebSocket): ()
 	end
 end
 
+local function on_server_ws_open(ws: net.ServerWebSocket): ()
+	print("[Server]: Websocket opened!")
+
+	-- Initially send the set-up data...
+	ws:send( json.serialize {
+		case = "init",
+		width = program.width,
+		height = program.height,
+	})
+
+	task.wait(1)
+
+	-- ...then, continuously feed the image data.
+	CURRENT_PROGRAM_RUNTIME = task.spawn(main_loop, ws)
+end
+
 local function on_server_ws_message(ws: net.ServerWebSocket, message: string | buffer): ()
 	if type(message) == "buffer" then return end
 	local input_data = json.deserialize(message) :: JS_InputData
@@ -70,6 +76,11 @@ end
 
 local function on_server_ws_close(ws: net.ServerWebSocket, code: number, message: string): ()
 	print("[Server]: Websocket closed!")
+
+	if CURRENT_PROGRAM_RUNTIME then
+		task.cancel(CURRENT_PROGRAM_RUNTIME)
+		CURRENT_PROGRAM_RUNTIME = nil
+	end
 end
 
 local function handler(request: net.ReceivedRequest, server: net.Server): (net.ServerResponse)
