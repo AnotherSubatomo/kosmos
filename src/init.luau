@@ -15,7 +15,11 @@
 
 	# Currently, the rendering pipeline looks like this:
 	meshdata -> world transforms -> camera transforms ->
-	culling -> clipping -> rasterization -> output image
+	culling -> clipping -> rasterization* -> output image
+
+	Rasterization only accounts for depth and UV (for texture mapping);
+	other per-vertex attributes such as color, transparency, and normals
+	are not and will not be supported.
 
 	# Depth interpolation conventions:
 		This renderer operates in camera space where:
@@ -42,16 +46,36 @@
 --!optimize 2
 --!native
 
-export type mesh = {
+-- Basic mesh data (allowed to be mutable)
+export type raw_mesh = {
 	vertices: {vector},
 	uvs: {vector},
 	faces: {vector}
 }
 
+-- A row-major, RGBA8 texture data, with a size equivalent
+-- to `width` * `height` * 4. (allowed to be mutable)
 export type texture = {
 	width: number,
 	height: number,
 	data: buffer
+}
+
+export type mesh = {
+	-- Mesh data reference directly derived from
+	-- `raw_mesh` (also allowed to be mutable)
+	vertices: {vector},
+	uvs: {vector},
+	faces: {vector},
+	-- * Yes, mutability means that every final mutation
+	--   would require a call of `recomputeMeshBounds()`
+	--   for the recalculation of the following bounds:
+	-- Axis-aligned bounds
+	aabb_min: vector,
+	aabb_max: vector,
+	-- Spherical bounds
+	sb_center: vector,
+	sb_radius: number,
 }
 
 export type object = {
@@ -63,25 +87,22 @@ export type object = {
 	forward: vector,
 }
 
-local ERR_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
+local ERR_SET_OBJ_DOESNT_EXIST = "Tried to change a property of a non-existant object."
 
 local NEAR = 0.01
-local NO_TEXTURE_ID = 0xffff
+local FAR = 1000
+local NO_TEXTURE_ID = 0
+
+local VEC_INF = vector.one * math.huge
+local VEC_NEG_INF = vector.one * -math.huge
 
 local GLOBAL_RIGHT = vector.create(1, 0, 0)
 local GLOBAL_UP = vector.create(0, 1, 0)
 local GLOBAL_FORWARD = vector.create(0, 0, 1)
 
-local DEFAULT_SKYBOX_TEXTURES = {
-	NO_TEXTURE_ID,
-	NO_TEXTURE_ID,
-	NO_TEXTURE_ID,
-	NO_TEXTURE_ID,
-	NO_TEXTURE_ID,
-	NO_TEXTURE_ID,
-}
-
 local SKYBOX_RADIUS = 2048
+
+local DEFAULT_SKYBOX_TEXTURES = {NO_TEXTURE_ID, NO_TEXTURE_ID, NO_TEXTURE_ID, NO_TEXTURE_ID, NO_TEXTURE_ID, NO_TEXTURE_ID}
 
 local SV_PPN = vector.create(SKYBOX_RADIUS, SKYBOX_RADIUS, -SKYBOX_RADIUS)
 local SV_NPN = vector.create(-SKYBOX_RADIUS, SKYBOX_RADIUS, -SKYBOX_RADIUS)
@@ -91,6 +112,11 @@ local SV_NPP = vector.create(-SKYBOX_RADIUS, SKYBOX_RADIUS, SKYBOX_RADIUS)
 local SV_PPP = vector.create(SKYBOX_RADIUS, SKYBOX_RADIUS, SKYBOX_RADIUS)
 local SV_PNP = vector.create(SKYBOX_RADIUS, -SKYBOX_RADIUS, SKYBOX_RADIUS)
 local SV_NNP = vector.create(-SKYBOX_RADIUS, -SKYBOX_RADIUS, SKYBOX_RADIUS)
+
+local SUV_11 = vector.create(1, 1)
+local SUV_01 = vector.create(0, 1)
+local SUV_00 = vector.create(0, 0)
+local SUV_10 = vector.create(1, 0)
 
 local SKYBOX_VERTICES = {
 	SV_PPN, SV_NPN, SV_NNN, SV_PNN, -- Front
@@ -113,6 +139,7 @@ local SKYBOX_FACES = {
 local function intersect(a: vector, auv: vector, b: vector, buv: vector): (vector, vector)
 	local ax, ay, az = a.x, a.y, a.z
 	local dz = b.z - az
+
 	if dz == 0 then
 		return vector.create(ax, ay, NEAR), auv
 	else
@@ -131,7 +158,7 @@ return function (width: number, height: number)
 
 	local WIDTH_M_1 = width - 1
 	local HEIGHT_M_1 = height - 1
-	local INV_ASPECT_RATIO = VIEW_HEIGHT / VIEW_WIDTH
+	local ASPECT_RATIO = VIEW_WIDTH / VIEW_HEIGHT
 
 	local IMAGE_ROW_OFFSET = 4 * VIEW_WIDTH
 	local IMAGE_MEMSIZE = IMAGE_ROW_OFFSET * VIEW_HEIGHT
@@ -150,13 +177,20 @@ return function (width: number, height: number)
 	local POSITION = vector.zero
 	local WORLD_UP = vector.create(0, 1, 0)
 	local YAW, PITCH, ROLL = 0, 0, 0
-	local FOV = 90
 
 	-- Derived camera settings
 	local RIGHT = GLOBAL_RIGHT
 	local UP = GLOBAL_UP
 	local FORWARD = GLOBAL_FORWARD
-	local SCALE = INV_ASPECT_RATIO
+
+	local TAN_Y = math.tan(math.rad(90) * 0.5)
+	local TAN_X = TAN_Y * ASPECT_RATIO
+
+	local INV_TAN_Y = 1 / TAN_Y
+	local INV_TAN_X = 1 / TAN_X
+
+	local LEN_Y = math.sqrt(1 + TAN_Y * TAN_Y)
+	local LEN_X = math.sqrt(1 + TAN_X * TAN_X)
 
 	-- Recomputes the orthogonal bases according to the euler rotations given.
 	local function calculate_basis(yaw: number, pitch: number, roll: number): (vector, vector, vector)
@@ -206,10 +240,15 @@ return function (width: number, height: number)
 		CAMERA_DIRTY = true
 	end
 
-	local function SET_FIELD_OF_VIEW(fov: number?): ()
-		if not fov or fov == FOV then return end
-		FOV = fov
-		SCALE = (1 / math.tan(math.rad(FOV) * 0.5)) * INV_ASPECT_RATIO
+	local function SET_FIELD_OF_VIEW(fov_degree: number): ()
+		TAN_Y = math.tan(math.rad(fov_degree) * 0.5)
+		TAN_X = TAN_Y * ASPECT_RATIO
+
+		INV_TAN_Y = 1 / TAN_Y
+		INV_TAN_X = 1 / TAN_X
+
+		LEN_Y = math.sqrt(1 + TAN_Y * TAN_Y)
+		LEN_X = math.sqrt(1 + TAN_X * TAN_X)
 		CAMERA_DIRTY = true
 	end
 
@@ -239,19 +278,57 @@ return function (width: number, height: number)
 	-- Projects the vertex into screen space. (the unmodified `z` is also returned)
 	local function project_to_screen(v: vector): (number, number, number)
 		local z = v.z
-		local px = (v.x/z) * SCALE
-		local py = (v.y/z) * SCALE
+		local px = (v.x/z) * INV_TAN_X
+		local py = (v.y/z) * INV_TAN_Y
 
 		return 
-			((px + 1) * 0.5 * (WIDTH_M_1)) // 1,
-			((1 - (py + 1) * 0.5) * (HEIGHT_M_1)) // 1,
+			((px + 1) * 0.5 * WIDTH_M_1) // 1,
+			((1 - (py + 1) * 0.5) * HEIGHT_M_1) // 1,
 			z
 	end
 
-	-- Transforms the set of vertices into world + camera space.
-	local function transform(vertices: {vector}, transforms: {vector}, object: object): ()
-		-- * commented since they're implicitly overwritten, though
-		--   when it makes more sense, I might uncomment this...
+	-- Sphere-based frustum culling.
+	local function is_frustum_culled(object: object, mesh: mesh): (boolean)
+		local center_local = mesh.sb_center
+
+		local center_world = object.position
+			+ object.right   * center_local.x
+			+ object.up      * center_local.y
+			+ object.forward * center_local.z
+
+		local center_view = center_world - POSITION
+
+		local cx = vector.dot(center_view, RIGHT)
+		local cy = vector.dot(center_view, UP)
+		local cz = vector.dot(center_view, FORWARD)
+
+		local r = mesh.sb_radius
+
+		if cz + r < NEAR then return true end -- Near
+		if cz - r > FAR then return true end -- Far
+
+		-- Frustum slope terms (z-scaled half-extents)
+		local half_width = cz * TAN_X
+		local half_height = cz * TAN_Y
+
+		-- Plane constants (sphere radius projected onto plane normals)
+		local plane_offset_x = -(r * LEN_X)
+		local plane_offset_y = -(r * LEN_Y)
+
+		if  cx + half_width < plane_offset_x then return true end -- Left
+		if -cx + half_width < plane_offset_x then return true end -- Right
+
+		if  cy + half_height < plane_offset_y then return true end -- Top
+		if -cy + half_height < plane_offset_y then return true end -- Bottom
+
+		return false
+	end
+
+	-- Transforms the set of vertices into world + camera space;
+	-- also recomputes the mesh bounds local to the mesh itself.
+	local function transform(mesh: mesh, object: object, transforms: {vector}, recompute_mesh_bounds: boolean): ()
+		-- * commented since it's implicitly overwritten, though
+		--   when it makes more sense, I might uncomment it...
 		--table.clear(transforms)
 
 		local position = object.position
@@ -259,23 +336,62 @@ return function (width: number, height: number)
 		local up = object.up
 		local forward = object.forward
 
-		for i, v in vertices do
-			-- World-space transformations: sync rotation & position properties
-			local rot_v = vector.create(
-				vector.dot(v, right),
-				vector.dot(v, up),
-				vector.dot(v, forward)
-			)
-			local pos_v = rot_v + position - POSITION
+		if recompute_mesh_bounds then
+			local aabb_min = VEC_INF
+			local aabb_max = VEC_NEG_INF
 
-			-- Camera-space transformation
-			local cam_v = vector.create(
-				vector.dot(pos_v, RIGHT),
-				vector.dot(pos_v, UP),
-				vector.dot(pos_v, FORWARD)
-			)
+			for i, v in mesh.vertices do
+				-- Calculate mesh-local AABB
+				aabb_min = vector.min(aabb_min, v)
+				aabb_max = vector.max(aabb_max, v)
 
-			transforms[i] = cam_v
+				-- Local-space -> world-space transformations
+				local rot_v = vector.create(
+					vector.dot(v, right),
+					vector.dot(v, up),
+					vector.dot(v, forward)
+				)
+
+				-- World-space -> camera-space transformations
+				-- `rot_v + position` is still world-space, `- POSITION` is now camera-space
+				local pos_v = rot_v + position - POSITION
+
+				local cam_v = vector.create(
+					vector.dot(pos_v, RIGHT),
+					vector.dot(pos_v, UP),
+					vector.dot(pos_v, FORWARD)
+				)
+
+				transforms[i] = cam_v
+			end
+
+			-- Calculate mesh-local spherical bounding (NOT assured to be optimal)
+			local sb_center = (aabb_min + aabb_max) * 0.5
+			local sb_radius = vector.magnitude(sb_center - aabb_min)
+
+			mesh.aabb_min, mesh.aabb_max, mesh.sb_center, mesh.sb_radius =
+				aabb_min, aabb_max, sb_center, sb_radius
+		else
+			for i, v in mesh.vertices do
+				-- Local-space -> world-space transformations
+				local rot_v = vector.create(
+					vector.dot(v, right),
+					vector.dot(v, up),
+					vector.dot(v, forward)
+				)
+
+				-- World-space -> camera-space transformations
+				-- `rot_v + position` is still world-space, `- POSITION` is now camera-space
+				local pos_v = rot_v + position - POSITION
+
+				local cam_v = vector.create(
+					vector.dot(pos_v, RIGHT),
+					vector.dot(pos_v, UP),
+					vector.dot(pos_v, FORWARD)
+				)
+
+				transforms[i] = cam_v
+			end
 		end
 	end
 
@@ -502,8 +618,11 @@ return function (width: number, height: number)
 				if w > buffer.readf32(Z, offset) then
 					-- Recover perspective-correct UVs
 					local inv_w = 1 / w
-					local u = (uw * inv_w) % 1
-					local v = (vw * inv_w) % 1
+					local u = uw * inv_w
+					local v = vw * inv_w
+
+					u -= u // 1
+					v -= v // 1
 
 					-- Map to texture
 					local s = (u * tw) // 1
@@ -518,11 +637,6 @@ return function (width: number, height: number)
 					g = bit32.band(bit32.rshift(g, 8), 0x0000FF00)
 
 					local color = 0xFF000000 + rb + g
-
-					-- Gradient debug pattern for UV
-					-- local s = (u * 255) // 1
-					-- local t = (v * 255) // 1
-					-- local color = texture_id * 0x10000 + t * 0x100 + s * 0x1
 
 					buffer.writeu32(IMAGE, offset, color)
 					buffer.writef32(Z, offset, w)
@@ -596,8 +710,11 @@ return function (width: number, height: number)
 				if w > buffer.readf32(Z, offset) then
 					-- Recover perspective-correct UVs
 					local inv_w = 1 / w
-					local u = (uw * inv_w) % 1
-					local v = (vw * inv_w) % 1
+					local u = uw * inv_w
+					local v = vw * inv_w
+
+					u -= u // 1
+					v -= v // 1
 
 					-- Map to texture
 					local s = (u * tw) // 1
@@ -612,11 +729,6 @@ return function (width: number, height: number)
 					g = bit32.band(bit32.rshift(g, 8), 0x0000FF00)
 
 					local color = 0xFF000000 + rb + g
-
-					-- Gradient debug pattern for UV
-					-- local s = (u * 255) // 1
-					-- local t = (v * 255) // 1
-					-- local color = texture_id * 0x10000 + t * 0x100 + s * 0x1
 
 					buffer.writeu32(IMAGE, offset, color)
 					buffer.writef32(Z, offset, w)
@@ -634,13 +746,31 @@ return function (width: number, height: number)
 	end
 
 	local MESHES = table.create(4) :: {mesh}
+	local MESH_RECOMPUTE_STATE = table.create(4) :: {boolean}
+
 	local TEXTURES = table.create(4) :: {texture}
+
 	local OBJECTS = table.create(16) :: {object}
 	local OBJECTS_CHANGED = table.create(16) :: {boolean}
 	local OBJECT_TRANSFORMS = table.create(16) :: {{vector}}
 
-	local function MESH(mesh: mesh): (number)
+	local function MESH(raw_mesh: raw_mesh): (number)
+		local vertices = raw_mesh.vertices
+
+		local mesh = {
+			vertices = vertices,
+			uvs = raw_mesh.uvs,
+			faces = raw_mesh.faces,
+
+			-- * Computation is defered to `transform()`
+			aabb_min = vector.zero,
+			aabb_max = vector.zero,
+			sb_center = vector.zero,
+			sb_radius = 0,
+		}
+
 		table.insert(MESHES, mesh)
+		table.insert(MESH_RECOMPUTE_STATE, true)
 		return #MESHES
 	end
 
@@ -650,15 +780,17 @@ return function (width: number, height: number)
 	end
 
 	local function OBJECT(mesh_id: number, texture_id: number?): (number)
-		if not MESHES[mesh_id] then
-			error "Tried to create an object for a non-existant mesh."
-		end
+		local mesh = MESHES[mesh_id]
+		if not mesh then error "Tried to create an object for a non-existant mesh." end
 
 		local object_id = #OBJECTS + 1
+		local valid_texture_id =
+			if texture_id and TEXTURES[texture_id]
+			then texture_id else NO_TEXTURE_ID
 
 		local object = {
 			mesh_id = mesh_id,
-			texture_id = texture_id or NO_TEXTURE_ID,
+			texture_id = valid_texture_id,
 			position = vector.zero,
 			right = GLOBAL_RIGHT,
 			up = GLOBAL_UP,
@@ -669,36 +801,53 @@ return function (width: number, height: number)
 		OBJECTS_CHANGED[object_id] = false
 
 		-- Create draw entry *once*
-		local mesh = MESHES[mesh_id]
 		OBJECT_TRANSFORMS[object_id] = table.create(#mesh.vertices) :: {vector}
 
 		return object_id
 	end
 
+	local function RECOMPUTE_MESH_BOUNDS(mesh_id: number): ()
+		local mesh = MESHES[mesh_id]
+		if not mesh then error "Tried to recompute the bounds of a non-existant mesh." end
+		MESH_RECOMPUTE_STATE[mesh_id] = true
+	end
+
+	local function GET_MESH_AABB(mesh_id: number): (vector, vector)
+		local mesh = MESHES[mesh_id]
+		if not mesh then error "Tried to get the axis-aligned bounds of a non-existant mesh." end
+		return mesh.aabb_min, mesh.aabb_max
+	end
+
+	local function GET_MESH_SB(mesh_id: number): (vector, number)
+		local mesh = MESHES[mesh_id]
+		if not mesh then error "Tried to get the spherical bounds of a non-existant mesh." end
+		return mesh.sb_center, mesh.sb_radius
+	end
+
 	local function SET_OBJECT_MESH(object_id: number, mesh_id: number): ()
 		local object = OBJECTS[object_id]
-		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		if not object then error(ERR_SET_OBJ_DOESNT_EXIST) end
 		object.mesh_id = mesh_id
 		OBJECTS_CHANGED[object_id] = true
 	end
 
 	local function SET_OBJECT_TEXTURE(object_id: number, texture_id: number): ()
 		local object = OBJECTS[object_id]
-		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		if not object then error(ERR_SET_OBJ_DOESNT_EXIST) end
 		object.texture_id = texture_id
 		OBJECTS_CHANGED[object_id] = true
 	end
 
 	local function SET_OBJECT_POSITION(object_id: number, position: vector): ()
 		local object = OBJECTS[object_id]
-		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		if not object then error(ERR_SET_OBJ_DOESNT_EXIST) end
 		object.position = position
 		OBJECTS_CHANGED[object_id] = true
 	end
 
 	local function SET_OBJECT_ROTATION(object_id: number, yaw: number, pitch: number, roll: number): ()
 		local object = OBJECTS[object_id]
-		if not object then error(ERR_OBJ_DOESNT_EXIST) end
+		if not object then error(ERR_SET_OBJ_DOESNT_EXIST) end
 		object.right, object.up, object.forward = calculate_basis(yaw, pitch, roll)
 		OBJECTS_CHANGED[object_id] = true
 	end
@@ -716,16 +865,25 @@ return function (width: number, height: number)
 			local texture_id = object.texture_id
 			if texture_id == NO_TEXTURE_ID then continue end
 
-			local mesh = MESHES[object.mesh_id]
+			local mesh_id = object.mesh_id
+			local mesh = MESHES[mesh_id]
 			local transforms = OBJECT_TRANSFORMS[object_id]
+
+			if is_frustum_culled(object, mesh) then continue end
 
 			-- Resolve necessary transforms
 			if CAMERA_DIRTY or OBJECTS_CHANGED[object_id] then
-				local vertices = mesh.vertices
-				transform(vertices, transforms, object)
+				local recompute_mesh_bounds = MESH_RECOMPUTE_STATE[mesh_id]
+				transform(mesh, object, transforms, recompute_mesh_bounds)
+
+				if recompute_mesh_bounds then
+					MESH_RECOMPUTE_STATE[mesh_id] = false
+				end
+
 				OBJECTS_CHANGED[object_id] = false
 			end
 
+			-- Render the object
 			local faces = mesh.faces
 			local uvs = mesh.uvs
 			local texture = TEXTURES[texture_id]
@@ -735,7 +893,6 @@ return function (width: number, height: number)
 			local trs = texture.width * 4
 			local td = texture.data
 
-			-- Actual render
 			for _, face in faces do
 				local ai = face.x
 				local bi = face.y
@@ -776,14 +933,11 @@ return function (width: number, height: number)
 
 		-- Transform skybox
 		for i, v in SKYBOX_VERTICES do
-			-- Position the skybox at the camera
-			local pos_v = v - POSITION
-
 			-- Camera-space transformation
 			local cam_v = vector.create(
-				vector.dot(pos_v, RIGHT),
-				vector.dot(pos_v, UP),
-				vector.dot(pos_v, FORWARD)
+				vector.dot(v, RIGHT),
+				vector.dot(v, UP),
+				vector.dot(v, FORWARD)
 			)
 
 			SKYBOX_TRANSFORMS[i] = cam_v
@@ -810,15 +964,10 @@ return function (width: number, height: number)
 			local c = SKYBOX_TRANSFORMS[ci]
 			local d = SKYBOX_TRANSFORMS[di]
 
-			local at = vector.create(1, 1)
-			local bt = vector.create(0, 1)
-			local ct = vector.create(0, 0)
-			local dt = vector.create(1, 0)
-
 			local tri_count = 0
 
 			-- Triangle one:
-			tri_count = clip_triangle(a, c, b, at, ct, bt)
+			tri_count = clip_triangle(a, c, b, SUV_11, SUV_00, SUV_01)
 			if tri_count == 1 then
 				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 255)
 			elseif tri_count == 2 then
@@ -827,7 +976,7 @@ return function (width: number, height: number)
 			end
 
 			-- Triangle two:
-			tri_count = clip_triangle(a, d, c, at, dt, ct)
+			tri_count = clip_triangle(a, d, c, SUV_11, SUV_10, SUV_00)
 			if tri_count == 1 then
 				draw_triangle(CV1, CV2, CV3, CT1, CT2, CT3, tw, th, trs, td, 255)
 			elseif tri_count == 2 then
@@ -852,6 +1001,10 @@ return function (width: number, height: number)
 		mesh = MESH;
 		texture = TEXTURE;
 		object = OBJECT;
+
+		recomputeMeshBounds = RECOMPUTE_MESH_BOUNDS;
+		getMeshAABB = GET_MESH_AABB;
+		getMeshSB = GET_MESH_SB;
 
 		setObjectMesh = SET_OBJECT_MESH;
 		setObjectTexture = SET_OBJECT_TEXTURE;
